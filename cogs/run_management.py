@@ -5,6 +5,7 @@ import aiosqlite
 from config import DATABASE_PATH, MAX_PLAYERS, MIN_PLAYERS, AVAILABLE_CLAUSES
 from utils import create_embed
 import database as db_utils
+import logging_utils
 
 class RunManagement(commands.Cog):
     """Commands for creating and managing Nuzlocke runs."""
@@ -52,6 +53,20 @@ class RunManagement(commands.Cog):
                 game_name,
                 num_players,
                 clause_list
+            )
+
+            # Log run creation
+            await logging_utils.log_event(
+                run_id,
+                "RUN_CREATED",
+                f"Run created by {interaction.user.name}",
+                {
+                    "creator": interaction.user.name,
+                    "run_name": run_name,
+                    "game": game_name,
+                    "num_players": num_players,
+                    "clauses": ", ".join(clause_list) if clause_list else "None"
+                }
             )
 
             embed = create_embed(
@@ -172,6 +187,18 @@ class RunManagement(commands.Cog):
                 player_count + 1
             )
 
+            # Log player join
+            await logging_utils.log_event(
+                run_id,
+                "PLAYER_JOINED",
+                f"{interaction.user.name} joined the run",
+                {
+                    "player": interaction.user.name,
+                    "player_id": player_id,
+                    "slot": player_count + 1
+                }
+            )
+
             embed = create_embed(
                 "✅ Joined Run",
                 f"You've joined **{run[3]}** (Player {player_count + 1}/{run[5]})",
@@ -250,6 +277,14 @@ class RunManagement(commands.Cog):
 
             # End the run
             await db_utils.end_run(run_id)
+
+            # Log run end
+            await logging_utils.log_event(
+                run_id,
+                "RUN_COMPLETED",
+                f"Run completed by {interaction.user.name}",
+                {"completed_by": interaction.user.name}
+            )
 
             embed = create_embed(
                 "✅ Run Completed",

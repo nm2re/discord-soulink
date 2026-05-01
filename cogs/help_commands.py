@@ -195,6 +195,23 @@ class HelpCommands(commands.Cog):
                     "description": "Show bot information and features",
                     "usage": "/about",
                     "parameters": []
+                },
+                "/run_log": {
+                    "description": "View the activity log for a run",
+                    "usage": "/run_log run_id:1 limit:15",
+                    "parameters": [
+                        ("run_id", "The run ID to view logs for (required)"),
+                        ("limit", "Number of recent events to show (default: 15, max: 50)")
+                    ],
+                    "note": "📋 Shows a clean formatted log of all events in the run organized by timestamp"
+                },
+                "/export_run_log": {
+                    "description": "Export run activity log as a downloadable text file",
+                    "usage": "/export_run_log run_id:1",
+                    "parameters": [
+                        ("run_id", "The run ID to export logs for (required)")
+                    ],
+                    "note": "📥 Downloads a clean, formatted text file with the complete run history"
                 }
             }
         }

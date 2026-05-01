@@ -5,6 +5,7 @@ import aiosqlite
 from config import DATABASE_PATH
 from utils import create_embed
 import database as db_utils
+import logging_utils
 
 class SoulLink(commands.Cog):
     """Commands for Soul Link specific features."""
@@ -73,10 +74,20 @@ class SoulLink(commands.Cog):
             return
 
         # Now use the existing link_by_route logic but pass route_id
-        await self._link_by_route(interaction, route_id)
+        await self._link_by_route(interaction, route_id, run_id)
 
-    async def _link_by_route(self, interaction: discord.Interaction, route_id: int):
+    async def _link_by_route(self, interaction: discord.Interaction, route_id: int, run_id: int = None):
         """Link all encounters on a specific route."""
+        # Get run_id from route if not provided
+        if not run_id:
+            async with aiosqlite.connect(DATABASE_PATH) as db:
+                async with db.execute(
+                    "SELECT run_id FROM routes WHERE route_id = ?",
+                    (route_id,)
+                ) as cursor:
+                    result = await cursor.fetchone()
+                    run_id = result[0] if result else None
+        
         # Get all encounters on this route along with route info
         async with aiosqlite.connect(DATABASE_PATH) as db:
             db.row_factory = aiosqlite.Row
@@ -124,7 +135,20 @@ class SoulLink(commands.Cog):
 
         # Link all encounters to each other (create pairs for all combinations)
         encounter_ids = [e['encounter_id'] for e in encounters]
+        pokemon_names = [e['pokemon_name'] for e in encounters]
         await self._link_encounters_together(encounter_ids)
+
+        # Log the soul link
+        await logging_utils.log_event(
+            run_id,
+            "POKEMON_LINKED",
+            f"{len(encounters)} Pokemon linked on Route {encounters[0]['route_number']}",
+            {
+                "route": encounters[0]['route_number'],
+                "pokemon_count": len(encounters),
+                "pokemon": ", ".join(pokemon_names)
+            }
+        )
 
         # Get player info for all encounters
         player_info = ""

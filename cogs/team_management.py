@@ -5,6 +5,7 @@ import aiosqlite
 from config import DATABASE_PATH, POKEMON_TYPES
 from utils import create_embed
 import database as db_utils
+import logging_utils
 
 class TeamManagement(commands.Cog):
     """Commands for managing Pokemon teams."""
@@ -211,6 +212,24 @@ class TeamManagement(commands.Cog):
                 )
                 await db.commit()
 
+            # Get run_id for logging
+            async with aiosqlite.connect(DATABASE_PATH) as db:
+                async with db.execute(
+                    "SELECT run_id FROM run_players WHERE player_id = ?",
+                    (member[1],)
+                ) as cursor:
+                    run_result = await cursor.fetchone()
+                    run_id = run_result[0] if run_result else None
+
+            # Log faint
+            if run_id:
+                await logging_utils.log_event(
+                    run_id,
+                    "POKEMON_FAINTED",
+                    f"{member[2]} fainted",
+                    {"pokemon": member[2], "player_id": member[1]}
+                )
+
             embed = create_embed(
                 "💀 Pokemon Fainted",
                 f"**{member[2]}** has fainted",
@@ -284,6 +303,24 @@ class TeamManagement(commands.Cog):
              # Box Pokemon
             await db_utils.box_pokemon(member_id)
 
+            # Get run_id for logging
+            async with aiosqlite.connect(DATABASE_PATH) as db:
+                async with db.execute(
+                    "SELECT run_id FROM run_players WHERE player_id = ?",
+                    (member[1],)
+                ) as cursor:
+                    run_result = await cursor.fetchone()
+                    run_id = run_result[0] if run_result else None
+
+            # Log box
+            if run_id:
+                await logging_utils.log_event(
+                    run_id,
+                    "POKEMON_BOXED",
+                    f"{member[2]} was boxed",
+                    {"pokemon": member[2], "player_id": member[1]}
+                )
+
             embed = create_embed(
                 "📦 Pokemon Boxed",
                 f"**{member[2]}** has been boxed",
@@ -346,6 +383,24 @@ class TeamManagement(commands.Cog):
               # Release Pokemon
             await db_utils.release_pokemon(member_id)
 
+            # Get run_id for logging
+            async with aiosqlite.connect(DATABASE_PATH) as db:
+                async with db.execute(
+                    "SELECT run_id FROM run_players WHERE player_id = ?",
+                    (member[1],)
+                ) as cursor:
+                    run_result = await cursor.fetchone()
+                    run_id = run_result[0] if run_result else None
+
+            # Log release
+            if run_id:
+                await logging_utils.log_event(
+                    run_id,
+                    "POKEMON_RELEASED",
+                    f"{member[2]} was released",
+                    {"pokemon": member[2], "player_id": member[1]}
+                )
+
             embed = create_embed(
                 "🚀 Pokemon Released",
                 f"**{member[2]}** has been released",
@@ -407,6 +462,24 @@ class TeamManagement(commands.Cog):
 
             # Unbox Pokemon
             await db_utils.unbox_pokemon(member_id)
+
+            # Get run_id for logging
+            async with aiosqlite.connect(DATABASE_PATH) as db:
+                async with db.execute(
+                    "SELECT run_id FROM run_players WHERE player_id = ?",
+                    (member[1],)
+                ) as cursor:
+                    run_result = await cursor.fetchone()
+                    run_id = run_result[0] if run_result else None
+
+            # Log unbox
+            if run_id:
+                await logging_utils.log_event(
+                    run_id,
+                    "POKEMON_UNBOXED",
+                    f"{member[2]} was unboxed",
+                    {"pokemon": member[2], "player_id": member[1]}
+                )
 
             embed = create_embed(
                 "📦 Pokemon Unboxed",

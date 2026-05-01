@@ -5,6 +5,7 @@ import aiosqlite
 from config import DATABASE_PATH
 from utils import create_embed
 import database as db_utils
+import logging_utils
 
 class RouteTracking(commands.Cog):
     """Commands for tracking routes and encounters."""
@@ -173,6 +174,21 @@ class RouteTracking(commands.Cog):
                 level=level,
                 is_starter=False,
                 route_encountered=route_number
+            )
+
+            # Log encounter
+            await logging_utils.log_event(
+                run_id,
+                "ENCOUNTER_RECORDED",
+                f"{player[3]} caught {pokemon_name} on Route {route_number}",
+                {
+                    "player": player[3],
+                    "pokemon": pokemon_name,
+                    "type": pokemon_type,
+                    "level": level,
+                    "route": route_number,
+                    "encounter_id": encounter_id
+                }
             )
 
             # Try to auto-link all encounters on this route
