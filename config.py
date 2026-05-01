@@ -14,7 +14,7 @@ BOT_PREFIX = "!"
 BOT_DESCRIPTION = "A bot for managing Nuzlocke Soul Link challenges with support for 1-4 players"
 
 # Game Constraints
-MIN_PLAYERS = 1
+MIN_PLAYERS = 2
 MAX_PLAYERS = 4
 
 # Nuzlocke Clauses (optional rules)
