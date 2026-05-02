@@ -256,7 +256,7 @@ class SoulLink(commands.Cog):
         run_id="The run ID"
     )
     async def soul_link_status(self, interaction: discord.Interaction, run_id: int):
-        """View all Soul Link pairs in a run."""
+        """View all Soul Link pairs in a run (groups 3+ player links together)."""
         try:
             await interaction.response.defer()
 
@@ -267,44 +267,59 @@ class SoulLink(commands.Cog):
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
 
-            # Get all soul link pairs
+            # Get all routes and their encounters to group linked Pokemon
             async with aiosqlite.connect(DATABASE_PATH) as db:
                 db.row_factory = aiosqlite.Row
+
+                # Get all routes
                 async with db.execute(
-                    """SELECT slp.*, 
-                              e1.pokemon_name as name1, e1.pokemon_type as type1, rp1.discord_name as player1,
-                              e2.pokemon_name as name2, e2.pokemon_type as type2, rp2.discord_name as player2,
-                              r.route_number
-                       FROM soul_link_pairs slp
-                       JOIN encounters e1 ON slp.encounter_id_1 = e1.encounter_id
-                       JOIN encounters e2 ON slp.encounter_id_2 = e2.encounter_id
-                       JOIN routes r ON e1.route_id = r.route_id
-                       JOIN run_players rp1 ON e1.player_id = rp1.player_id
-                       JOIN run_players rp2 ON e2.player_id = rp2.player_id
-                       WHERE r.run_id = ?
-                       ORDER BY r.route_number""",
+                    "SELECT * FROM routes WHERE run_id = ? ORDER BY route_number",
                     (run_id,)
                 ) as cursor:
-                    pairs = await cursor.fetchall()
+                    routes = await cursor.fetchall()
+
+            # Build info for each route showing linked Pokemon groups
+            route_groups = {}  # route_number -> list of linked Pokemon
+
+            for route in routes:
+                # Get all encounters on this route
+                async with aiosqlite.connect(DATABASE_PATH) as db:
+                    db.row_factory = aiosqlite.Row
+                    async with db.execute(
+                        """SELECT e.encounter_id, e.pokemon_name, e.pokemon_type, rp.discord_name
+                           FROM encounters e
+                           JOIN run_players rp ON e.player_id = rp.player_id
+                           WHERE e.route_id = ?
+                           ORDER BY rp.discord_name""",
+                        (route['route_id'],)
+                    ) as cursor:
+                        encounters = await cursor.fetchall()
+
+                if encounters:
+                    route_groups[route['route_number']] = encounters
 
             embed = create_embed(
-                f"🔗 {run[2]} - Soul Link Pairs",
-                f"Total pairs: {len(pairs)}",
+                f"🔗 {run[2]} - Soul Link Groups",
+                f"Total linked routes: {len(route_groups)}",
                 discord.Color.purple()
             )
 
-            if not pairs:
-                embed.add_field(name="Pairs", value="No Soul Link pairs yet", inline=False)
+            if not route_groups:
+                embed.add_field(name="Soul Links", value="No Soul Link groups yet", inline=False)
             else:
-                pair_info = ""
-                for pair in pairs:
-                    status1 = "✅" if pair['name1'] else "❌"
-                    status2 = "✅" if pair['name2'] else "❌"
-                    pair_info += f"**Route {pair['route_number']}**\n"
-                    pair_info += f"{status1} {pair['player1']}: **{pair['name1']}** ({pair['type1']})\n"
-                    pair_info += f"{status2} {pair['player2']}: **{pair['name2']}** ({pair['type2']})\n\n"
+                for route_num in sorted(route_groups.keys()):
+                    encounters = route_groups[route_num]
+                    pokemon_info = ""
+                    for enc in encounters:
+                        status = "✅"
+                        pokemon_info += f"{status} {enc['discord_name']}: **{enc['pokemon_name']}** ({enc['pokemon_type']})\n"
 
-                embed.add_field(name="Linked Pairs", value=pair_info, inline=False)
+                    link_text = f"**{len(encounters)} Pokemon Linked**" if len(encounters) > 2 else f"**Pair**"
+                    embed.add_field(
+                        name=f"Route {route_num} - {link_text}",
+                        value=pokemon_info.strip(),
+                        inline=False
+                    )
 
             await interaction.followup.send(embed=embed)
         except Exception as e:

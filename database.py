@@ -862,7 +862,7 @@ async def auto_link_route_encounters(route_id: int):
      if len(encounters) < 2:
          return False, "Waiting for other players", 0
      
-     # Check if already linked
+     # Check how many pairs already exist
      async with aiosqlite.connect(DATABASE_PATH) as db:
          async with db.execute(
              """SELECT COUNT(*) FROM soul_link_pairs slp
@@ -872,14 +872,19 @@ async def auto_link_route_encounters(route_id: int):
          ) as cursor:
              existing_links = (await cursor.fetchone())[0]
      
-     if existing_links > 0:
-         # Already linked, return with special indicator
+     # Calculate how many pairs SHOULD exist for all encounters to be linked
+     # Formula: N * (N-1) / 2 where N is number of encounters
+     expected_total_links = len(encounters) * (len(encounters) - 1) // 2
+     
+     if existing_links >= expected_total_links:
+         # Already fully linked (all possible pairs exist)
          return True, f"Already linked", -1
      
-     # Link all encounters together
+     # Link all encounters together (will skip pairs that already exist)
      linked_count = 0
      for i in range(len(encounters)):
          for j in range(i + 1, len(encounters)):
+             # This will only create the link if it doesn't exist
              await link_pokemon_pair(encounters[i]['encounter_id'], encounters[j]['encounter_id'])
              linked_count += 1
      
