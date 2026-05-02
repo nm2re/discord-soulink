@@ -5,15 +5,14 @@ A comprehensive Discord bot for managing **Soul Link Nuzlocke challenges** with 
 ## 🎮 Features
 
 ### Core Features
-✅ **Multi-player Support** - Play with 1-4 players in co-op Nuzlocke runs
-✅ **Automatic Soul Linking** - Pokemon encountered on the same route are instantly linked
-✅ **Team Management** - Add, track, faint, box, unbox, and release Pokemon
-✅ **Route/Encounter Tracking** - Record all Pokemon encounters organized by route
-✅ **Activity Logging** - Complete activity history of every run with export functionality
-✅ **Run Health Monitoring** - Check team status and death counts in real-time
-✅ **Rules Enforcement** - Check if teams follow Soul Link clauses (e.g., type restriction)
-✅ **Data Preservation** - All run data is preserved even after run completion
-✅ **Complete Cleanup** - Delete runs with full database cleanup (no orphaned data)
+✅ **Multi-player Support** - Play with 2-4 players in co-op Nuzlocke runs  
+✅ **Automatic Soul Linking** - Pokemon encountered on the same route are instantly linked  
+✅ **Team Management** - Add, track, faint, box, unbox, and release Pokemon  
+✅ **Route/Encounter Tracking** - Record all Pokemon encounters organized by route  
+✅ **Activity Logging** - Complete activity history of every run with export functionality  
+✅ **Run Health Monitoring** - Check team status and death counts in real-time  
+✅ **Data Preservation** - All run data is preserved even after run completion  
+
 
 ### Soul Link Mechanics
 - When 2+ players catch Pokemon on the **same route**, they are **automatically linked**
@@ -182,12 +181,12 @@ OR
 Every action in your run is automatically logged for complete history tracking.
 
 ### Logged Events
-✅ Run created
-✅ Players joined
-✅ Pokemon caught (encounters recorded)
-✅ Pokemon linked as Soul Link partners
-✅ Pokemon fainted/boxed/unboxed/released
-✅ Run completed/deleted
+✅ Run created  
+✅ Players joined  
+✅ Pokemon caught (encounters recorded)  
+✅ Pokemon linked as Soul Link partners  
+✅ Pokemon fainted/boxed/unboxed/released  
+✅ Run completed/deleted  
 
 ### View Logs
 
@@ -264,7 +263,7 @@ If you delete **ALL runs**, IDs reset to starting values:
 - Routes will start at route_id: 2000 (instead of 2002)
 - And so on for all ID types
 
-## 🎯 Soul Link Rules
+## 🎯 Soul Link Rules (BETA)
 
 ### Type Restriction Clause
 When creating a run with `clauses:"type_restriction"`:
@@ -348,27 +347,7 @@ Shows recent events with timestamps and details
 - **Discord.py:** App commands and embeds
 - **Error Handling:** Comprehensive try/catch with user-friendly messages
 
-## 🐛 Troubleshooting
 
-### Commands not appearing
-- Restart the bot
-- Wait 1-2 minutes for Discord to sync
-- Check bot has proper permissions
-
-### Auto-linking not working
-- Make sure both players have encounters on the same route
-- Check run_id is correct
-- Use `/view_route` to verify encounters exist
-
-### Data not deleting
-- Use `/delete_run run_id:X confirm:yes` with confirmation
-- Check the log file to verify run existed
-- Run log is preserved even after deletion
-
-### IDs not resetting
-- Delete ALL runs in the database
-- IDs only reset when zero runs remain
-- This is by design to maintain historical integrity
 
 ## 📚 Example Workflow
 
@@ -423,19 +402,9 @@ Shows recent events with timestamps and details
 - Activity logs preserved indefinitely
 - Complete audit trail of all events
 
-## 📞 Support
-
-For issues or questions:
-1. Check `/help` for command syntax
-2. Check `/run_log` for activity history
-3. Use `/check_run_health` to verify team status
-4. Restart bot if commands don't appear
-
 ## 📄 License
 
 This project is a personal Nuzlocke Soul Link tracker for Discord.
 
 ---
-
 **Happy Soul Linking! 🎮✨**
-
