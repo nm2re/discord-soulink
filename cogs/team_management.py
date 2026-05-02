@@ -245,7 +245,7 @@ class TeamManagement(commands.Cog):
                 async with aiosqlite.connect(DATABASE_PATH) as db:
                     db.row_factory = aiosqlite.Row
                     async with db.execute(
-                        """SELECT DISTINCT tm.member_id, tm.pokemon_name, rp.player_id FROM team_members tm
+                        """SELECT DISTINCT tm.member_id, tm.pokemon_name FROM team_members tm
                            JOIN encounters e ON e.pokemon_name = tm.pokemon_name
                            JOIN routes r ON e.route_id = r.route_id
                            WHERE LOWER(r.route_number) = LOWER(?) AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
