@@ -1,6 +1,6 @@
 # Nuzlocke Soul Link Bot
 
-A comprehensive Discord bot for managing **Soul Link Nuzlocke challenges** with support for 1-4 players. Automatically links Pokemon encounters on the same route, tracks team health, enforces Soul Link rules, and logs all run activities.
+A comprehensive Discord bot for managing **Soul Link Nuzlocke challenges** with support for 2-4 players. Automatically links Pokemon encounters on the same route, tracks team health, enforces Soul Link rules, and logs all run activities.
 
 ## 🎮 Features
 
