@@ -3,6 +3,11 @@ import json
 from config import DATABASE_PATH
 from typing import Optional, List
 
+
+def normalize_route_identifier(route_number: str) -> str:
+    """Normalize route identifiers for consistent storage and lookup."""
+    return str(route_number).strip().lower()
+
 async def init_db():
     """Initialize the database with all required tables."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
@@ -45,7 +50,7 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS routes (
                 route_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_id INTEGER NOT NULL,
-                route_number INTEGER NOT NULL,
+                route_number TEXT NOT NULL,
                 route_name TEXT,
                 status TEXT DEFAULT 'AVAILABLE',
                 FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE,
@@ -93,7 +98,7 @@ async def init_db():
                 status TEXT DEFAULT 'ACTIVE',
                 is_encountered INTEGER DEFAULT 0,
                 is_starter INTEGER DEFAULT 0,
-                route_encountered INTEGER,
+                route_encountered TEXT,
                 linked_member_id INTEGER,
                 added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (player_id) REFERENCES run_players(player_id) ON DELETE CASCADE
@@ -262,8 +267,9 @@ async def add_player_to_run(run_id: int, user_id: int, discord_name: str, team_s
             raise ValueError(f"Player already in this run")
 
 
-async def add_route_to_run(run_id: int, route_number: int, route_name: str = ""):
+async def add_route_to_run(run_id: int, route_number: str, route_name: str = ""):
     """Add a route to a run."""
+    route_number = normalize_route_identifier(route_number)
     async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.execute(
             """INSERT INTO routes (run_id, route_number, route_name)
@@ -329,8 +335,10 @@ async def link_pokemon_pair(encounter_id_1: int, encounter_id_2: int):
 
 async def add_team_member(player_id: int, pokemon_name: str, pokemon_type: str = "",
                            level: int = 1, is_starter: bool = False,
-                           route_encountered: Optional[int] = None):
+                           route_encountered: Optional[str] = None):
      """Add a Pokemon to a player's team."""
+     if route_encountered is not None:
+         route_encountered = normalize_route_identifier(route_encountered)
      async with aiosqlite.connect(DATABASE_PATH) as db:
          await db.execute(
              """INSERT INTO team_members (player_id, pokemon_name, pokemon_type, level, 
@@ -347,11 +355,11 @@ async def add_team_member(player_id: int, pokemon_name: str, pokemon_type: str =
              result = await cursor.fetchone()
              member_id = result[0]
 
-         # If this Pokemon came from a linked encounter, find and link the partner team members
+         # If this Pokemon came from a linked encounter, find and link linked team members.
          if route_encountered:
-             # Get the route_id for this route number and run
+             # Get the route_id for this route identifier and run
              async with db.execute(
-                 """SELECT route_id FROM routes WHERE route_number = ? 
+                 """SELECT route_id FROM routes WHERE LOWER(route_number) = LOWER(?) 
                     AND run_id = (SELECT run_id FROM run_players WHERE player_id = ?)""",
                  (route_encountered, player_id)
              ) as cursor:
@@ -456,7 +464,7 @@ async def unbox_pokemon(member_id: int):
          route_encountered = row[1]
          if route_encountered:
              async with db.execute(
-                 """SELECT route_id FROM routes WHERE route_number = ? 
+                """SELECT route_id FROM routes WHERE LOWER(route_number) = LOWER(?) 
                     AND run_id IN (SELECT run_id FROM run_players WHERE player_id IN 
                                    (SELECT player_id FROM team_members WHERE member_id = ?))""",
                  (route_encountered, member_id)
@@ -662,7 +670,7 @@ async def faint_all_linked_pokemon(member_id: int):
          route_encountered = row[1]
          if route_encountered:
              async with db.execute(
-                 """SELECT route_id FROM routes WHERE route_number = ? 
+                """SELECT route_id FROM routes WHERE LOWER(route_number) = LOWER(?) 
                     AND run_id IN (SELECT run_id FROM run_players WHERE player_id IN 
                                    (SELECT player_id FROM team_members WHERE member_id = ?))""",
                  (route_encountered, member_id)
@@ -732,7 +740,7 @@ async def box_all_linked_pokemon(member_id: int):
          route_encountered = row[1]
          if route_encountered:
              async with db.execute(
-                 """SELECT route_id FROM routes WHERE route_number = ? 
+                """SELECT route_id FROM routes WHERE LOWER(route_number) = LOWER(?) 
                     AND run_id IN (SELECT run_id FROM run_players WHERE player_id IN 
                                    (SELECT player_id FROM team_members WHERE member_id = ?))""",
                  (route_encountered, member_id)
@@ -802,7 +810,7 @@ async def release_all_linked_pokemon(member_id: int):
          route_encountered = row[1]
          if route_encountered:
              async with db.execute(
-                 """SELECT route_id FROM routes WHERE route_number = ? 
+                """SELECT route_id FROM routes WHERE LOWER(route_number) = LOWER(?) 
                     AND run_id IN (SELECT run_id FROM run_players WHERE player_id IN 
                                    (SELECT player_id FROM team_members WHERE member_id = ?))""",
                  (route_encountered, member_id)
@@ -836,11 +844,12 @@ async def release_all_linked_pokemon(member_id: int):
                      await db.commit()
 
 
-async def get_route_id(run_id: int, route_number: int):
+async def get_route_id(run_id: int, route_number: str):
     """Get route_id from run_id and route_number."""
+    route_number = normalize_route_identifier(route_number)
     async with aiosqlite.connect(DATABASE_PATH) as db:
         async with db.execute(
-            "SELECT route_id FROM routes WHERE run_id = ? AND route_number = ?",
+            "SELECT route_id FROM routes WHERE run_id = ? AND LOWER(route_number) = LOWER(?)",
             (run_id, route_number)
         ) as cursor:
             result = await cursor.fetchone()

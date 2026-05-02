@@ -16,12 +16,14 @@ class RouteTracking(commands.Cog):
     @app_commands.command(name="add_route", description="Add a route to a run")
     @app_commands.describe(
         run_id="The run to add the route to",
-        route_number="Route number (e.g., 1 for Route 1)",
+        route_number="Route identifier (e.g., 1 or New Bark Town)",
         route_name="Optional name for the route"
     )
-    async def add_route(self, interaction: discord.Interaction, run_id: int, route_number: int, route_name: str = ""):
+    async def add_route(self, interaction: discord.Interaction, run_id: int, route_number: str, route_name: str = ""):
         """Add a route to a Nuzlocke run."""
         try:
+            route_number = route_number.strip().lower()
+
             # Check if run exists
             run = await db_utils.get_run(run_id)
             if not run:
@@ -32,7 +34,7 @@ class RouteTracking(commands.Cog):
             # Check if route already exists
             async with aiosqlite.connect(DATABASE_PATH) as db:
                 async with db.execute(
-                    "SELECT * FROM routes WHERE run_id = ? AND route_number = ?",
+                    "SELECT * FROM routes WHERE run_id = ? AND LOWER(route_number) = LOWER(?)",
                     (run_id, route_number)
                 ) as cursor:
                     if await cursor.fetchone():
@@ -116,17 +118,18 @@ class RouteTracking(commands.Cog):
     @app_commands.command(name="record_encounter", description="Record a Pokemon encounter and automatically add it to team")
     @app_commands.describe(
         run_id="The run ID",
-        route_number="Route number (e.g., 1 for Route 1)",
+        route_number="Route identifier (e.g., 1 or New Bark Town)",
         player_id="Player ID making the encounter",
         pokemon_name="Name/species of the Pokemon",
         pokemon_type="Primary type of the Pokemon",
         level="Pokemon level (default 1)"
     )
-    async def record_encounter(self, interaction: discord.Interaction, run_id: int, route_number: int,
+    async def record_encounter(self, interaction: discord.Interaction, run_id: int, route_number: str,
                               player_id: int, pokemon_name: str, pokemon_type: str = "", level: int = 1):
         """Record a Pokemon encounter and automatically add it to the team and create the route."""
         try:
             await interaction.response.defer()
+            route_number = route_number.strip().lower()
 
             # Get run and verify it exists
             run = await db_utils.get_run(run_id)
@@ -152,7 +155,7 @@ class RouteTracking(commands.Cog):
             route_id = None
             async with aiosqlite.connect(DATABASE_PATH) as db:
                 async with db.execute(
-                    "SELECT route_id FROM routes WHERE run_id = ? AND route_number = ?",
+                    "SELECT route_id FROM routes WHERE run_id = ? AND LOWER(route_number) = LOWER(?)",
                     (run_id, route_number)
                 ) as cursor:
                     result = await cursor.fetchone()
@@ -180,7 +183,7 @@ class RouteTracking(commands.Cog):
             await logging_utils.log_event(
                 run_id,
                 "ENCOUNTER_RECORDED",
-                f"{player[3]} caught {pokemon_name} on Route {route_number}",
+                f"{player[3]} caught {pokemon_name} on {route_number}",
                 {
                     "player": player[3],
                     "pokemon": pokemon_name,
@@ -196,7 +199,7 @@ class RouteTracking(commands.Cog):
 
             embed = create_embed(
                 "✅ Encounter Recorded & Added to Team",
-                f"**{pokemon_name}** ({pokemon_type}) on Route {route_number}",
+                f"**{pokemon_name}** ({pokemon_type}) on {route_number}",
                 discord.Color.green()
             )
             embed.add_field(name="Player", value=f"{player[3]}", inline=True)
@@ -223,18 +226,19 @@ class RouteTracking(commands.Cog):
     @app_commands.command(name="view_route", description="View all encounters on a route by route_number")
     @app_commands.describe(
         run_id="The run ID",
-        route_number="Route number (e.g., 1 for Route 1)"
+        route_number="Route identifier (e.g., 1 or New Bark Town)"
     )
-    async def view_route(self, interaction: discord.Interaction, run_id: int, route_number: int):
+    async def view_route(self, interaction: discord.Interaction, run_id: int, route_number: str):
         """View encounters on a route."""
         try:
             await interaction.response.defer()
+            route_number = route_number.strip().lower()
 
             # Get the route_id from run_id and route_number
             route_id = None
             async with aiosqlite.connect(DATABASE_PATH) as db:
                 async with db.execute(
-                    "SELECT route_id FROM routes WHERE run_id = ? AND route_number = ?",
+                    "SELECT route_id FROM routes WHERE run_id = ? AND LOWER(route_number) = LOWER(?)",
                     (run_id, route_number)
                 ) as cursor:
                     result = await cursor.fetchone()

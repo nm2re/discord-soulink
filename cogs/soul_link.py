@@ -16,18 +16,20 @@ class SoulLink(commands.Cog):
     @app_commands.command(name="link_pokemon", description="Link Pokemon encounters as Soul Link partners (by route_number or manually)")
     @app_commands.describe(
         run_id="The run ID (required for route_number linking)",
-        route_number="Route number to link (e.g., 1 for Route 1) - use this OR encounter_ids",
+        route_number="Route identifier to link (e.g., 1 or New Bark Town) - use this OR encounter_ids",
         encounter_id_1="First encounter ID (optional - use with other encounter_ids instead of route)",
         encounter_id_2="Second encounter ID (optional)",
         encounter_id_3="Third encounter ID for 3-player (optional)",
         encounter_id_4="Fourth encounter ID for 4-player (optional)"
     )
-    async def link_pokemon(self, interaction: discord.Interaction, run_id: int = None, route_number: int = None,
+    async def link_pokemon(self, interaction: discord.Interaction, run_id: int = None, route_number: str = None,
                           encounter_id_1: int = None, encounter_id_2: int = None,
                           encounter_id_3: int = None, encounter_id_4: int = None):
         """Link Pokemon encounters as Soul Link partners (supports 2-4 players)."""
         try:
             await interaction.response.defer()
+            if route_number is not None:
+                route_number = route_number.strip().lower()
 
             # Determine which mode is being used
             if run_id is not None and route_number is not None:
@@ -55,13 +57,13 @@ class SoulLink(commands.Cog):
             embed = create_embed("❌ Error", str(e), discord.Color.red())
             await interaction.followup.send(embed=embed, ephemeral=True)
 
-    async def _link_by_route_number(self, interaction: discord.Interaction, run_id: int, route_number: int):
+    async def _link_by_route_number(self, interaction: discord.Interaction, run_id: int, route_number: str):
         """Link all encounters on a specific route by route_number."""
         # Get the route_id from run_id and route_number
         route_id = None
         async with aiosqlite.connect(DATABASE_PATH) as db:
             async with db.execute(
-                "SELECT route_id FROM routes WHERE run_id = ? AND route_number = ?",
+                "SELECT route_id FROM routes WHERE run_id = ? AND LOWER(route_number) = LOWER(?)",
                 (run_id, route_number)
             ) as cursor:
                 result = await cursor.fetchone()
@@ -251,12 +253,12 @@ class SoulLink(commands.Cog):
                 await db_utils.link_pokemon_pair(encounter_ids[i], encounter_ids[j])
 
 
-    @app_commands.command(name="soul_link_status", description="View Soul Link pairs in a run")
+    @app_commands.command(name="soul_link_status", description="View Soul Link groups in a run")
     @app_commands.describe(
         run_id="The run ID"
     )
     async def soul_link_status(self, interaction: discord.Interaction, run_id: int):
-        """View all Soul Link pairs in a run (groups 3+ player links together)."""
+        """View all Soul Link groups in a run (supports 2-4 players)."""
         try:
             await interaction.response.defer()
 
@@ -326,12 +328,12 @@ class SoulLink(commands.Cog):
             embed = create_embed("❌ Error", str(e), discord.Color.red())
             await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="check_run_health", description="Check overall health of a 2-player Soul Link run")
+    @app_commands.command(name="check_run_health", description="Check overall health of a Soul Link run")
     @app_commands.describe(
         run_id="The run ID"
     )
     async def check_run_health(self, interaction: discord.Interaction, run_id: int):
-        """Check health of a 2-player Soul Link run."""
+        """Check health of a Soul Link run (2+ players)."""
         try:
             await interaction.response.defer()
 

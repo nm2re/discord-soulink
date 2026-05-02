@@ -29,10 +29,10 @@ class HelpCommands(commands.Cog):
             },
             "/record_encounter": {
                 "description": "Record a Pokemon encounter and automatically add it to the team and link it with other encounters on the same route",
-                "usage": '/record_encounter run_id:1 route_number:1 player_id:1 pokemon_name:"Pidgeot" pokemon_type:"Flying" level:5',
+                "usage": '/record_encounter run_id:1 route_number:"New Bark Town" player_id:1 pokemon_name:"Pidgeot" pokemon_type:"Flying" level:5',
                 "parameters": [
                     ("run_id", "The run ID (required)"),
-                    ("route_number", "Route number (auto-creates route if not exists) (required)"),
+                    ("route_number", "Route identifier (number or name; auto-creates route if missing) (required)"),
                     ("player_id", "Player ID making the encounter (required)"),
                     ("pokemon_name", "Name/species of the Pokemon (required)"),
                     ("pokemon_type", "Primary type of the Pokemon (optional)"),
@@ -46,7 +46,7 @@ class HelpCommands(commands.Cog):
                 "parameters": [
                     ("member_id", "Member ID of the Pokemon (required)")
                 ],
-                "note": "⚠️ If Soul Linked, the partner Pokemon also faints!"
+                "note": "⚠️ If Soul Linked, all linked Pokemon also faint!"
             },
             "/box_pokemon": {
                 "description": "Box a Pokemon (temporarily remove from team)",
@@ -54,7 +54,7 @@ class HelpCommands(commands.Cog):
                 "parameters": [
                     ("member_id", "Member ID of the Pokemon (required)")
                 ],
-                "note": "⚠️ If Soul Linked, the partner Pokemon is also boxed!"
+                "note": "⚠️ If Soul Linked, all linked Pokemon are also boxed!"
             },
             "/unbox_pokemon": {
                 "description": "Unbox a Pokemon (return to active team)",
@@ -62,7 +62,7 @@ class HelpCommands(commands.Cog):
                 "parameters": [
                     ("member_id", "Member ID of the Pokemon (required)")
                 ],
-                "note": "⚠️ If Soul Linked, the partner Pokemon is also unboxed!"
+                "note": "⚠️ If Soul Linked, all linked Pokemon are also unboxed!"
             },
             "/view_team": {
                 "description": "View a player's complete Pokemon team (active, boxed, fainted, released)",
@@ -142,10 +142,10 @@ class HelpCommands(commands.Cog):
                 },
                 "/record_encounter": {
                     "description": "Record a Pokemon encounter and automatically add it to the team and link it with other encounters on the same route",
-                    "usage": '/record_encounter run_id:1 route_number:1 player_id:1 pokemon_name:"Pidgeot" pokemon_type:"Flying" level:5',
+                    "usage": '/record_encounter run_id:1 route_number:"New Bark Town" player_id:1 pokemon_name:"Pidgeot" pokemon_type:"Flying" level:5',
                     "parameters": [
                         ("run_id", "The run ID (required)"),
-                        ("route_number", "Route number (auto-creates route if not exists) (required)"),
+                        ("route_number", "Route identifier (number or name; auto-creates route if missing) (required)"),
                         ("player_id", "Player ID making the encounter (required)"),
                         ("pokemon_name", "Name/species of the Pokemon (required)"),
                         ("pokemon_type", "Primary type of the Pokemon (optional)"),
@@ -172,15 +172,16 @@ class HelpCommands(commands.Cog):
             "📚 Team Management": {
                 "/add_pokemon": {
                     "description": "Manually add a Pokemon to a player's team (rarely needed - use /record_encounter instead)",
-                    "usage": '/add_pokemon player_id:1 pokemon_name:"Charizard" pokemon_type:"Fire" level:25 is_starter:true',
+                    "usage": '/add_pokemon player_id:1 pokemon_name:"Charizard" pokemon_type:"Fire" level:25 is_starter:true route_number:"New Bark Town"',
                     "parameters": [
                         ("player_id", "Your player ID (required)"),
                         ("pokemon_name", "Name of the Pokemon (required)"),
                         ("pokemon_type", "Primary type of the Pokemon (required)"),
                         ("level", "Level of the Pokemon, default 1 (optional)"),
-                        ("is_starter", "Is this your starter? true/false, default false (optional)")
+                        ("is_starter", "Is this your starter? true/false, default false (optional)"),
+                        ("route_number", "Optional route identifier (number or name) to attach encounter-based soul link behavior")
                     ],
-                    "note": "ℹ️ Most of the time, use /record_encounter instead - it automatically adds Pokemon to your team!"
+                    "note": "ℹ️ Most of the time, use /record_encounter instead - it automatically adds and links Pokemon. Use route_number here if you need manual add with soul-link propagation."
                 },
                 "/view_team": {
                     "description": "View a player's complete Pokemon team (active, boxed, fainted, released)",
@@ -195,7 +196,7 @@ class HelpCommands(commands.Cog):
                     "parameters": [
                         ("member_id", "Member ID of the Pokemon (required)")
                     ],
-                    "note": "⚠️ If Soul Linked, the partner Pokemon also faints!"
+                    "note": "⚠️ If Soul Linked, all linked Pokemon also faint!"
                 },
                 "/box_pokemon": {
                     "description": "Box a Pokemon (temporarily remove from team)",
@@ -203,7 +204,7 @@ class HelpCommands(commands.Cog):
                     "parameters": [
                         ("member_id", "Member ID of the Pokemon (required)")
                     ],
-                    "note": "⚠️ If Soul Linked, the partner Pokemon is also boxed!"
+                    "note": "⚠️ If Soul Linked, all linked Pokemon are also boxed!"
                 },
                 "/unbox_pokemon": {
                     "description": "Unbox a Pokemon (return to active team)",
@@ -211,7 +212,7 @@ class HelpCommands(commands.Cog):
                     "parameters": [
                         ("member_id", "Member ID of the Pokemon (required)")
                     ],
-                    "note": "⚠️ If Soul Linked, the partner Pokemon is also unboxed!"
+                    "note": "⚠️ If Soul Linked, all linked Pokemon are also unboxed!"
                 },
                 "/release_pokemon": {
                     "description": "Release a Pokemon permanently",
@@ -219,22 +220,22 @@ class HelpCommands(commands.Cog):
                     "parameters": [
                         ("member_id", "Member ID of the Pokemon (required)")
                     ],
-                    "note": "⚠️ If Soul Linked, the partner Pokemon is also released!"
+                    "note": "⚠️ If Soul Linked, all linked Pokemon are also released!"
                 }
             },
 
             "📚 Soul Link": {
                 "/link_pokemon": {
                     "description": "Manually link Pokemon encounters on a route as Soul Link partners",
-                    "usage": "/link_pokemon run_id:1 route_number:1",
+                    "usage": '/link_pokemon run_id:1 route_number:"New Bark Town"',
                     "parameters": [
                         ("run_id", "The run ID (required for route linking)"),
-                        ("route_number", "Route number to link, e.g., 1 for Route 1 (required for route linking)")
+                        ("route_number", "Route identifier to link, e.g., 1 or New Bark Town (required for route linking)")
                     ],
                     "note": "ℹ️ Most of the time you don't need this! Pokemon on the same route are automatically linked when they're recorded with /record_encounter. Use this only for manual linking of specific encounters."
                 },
                 "/soul_link_status": {
-                    "description": "View all Soul Link pairs in a run",
+                    "description": "View all Soul Link groups in a run",
                     "usage": "/soul_link_status run_id:1",
                     "parameters": [
                         ("run_id", "The run ID (required)")

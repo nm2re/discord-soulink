@@ -19,12 +19,17 @@ class TeamManagement(commands.Cog):
         pokemon_name="Name of the Pokemon",
         pokemon_type="Primary type of the Pokemon",
         level="Level of the Pokemon",
-        is_starter="Is this your starter?"
+        is_starter="Is this your starter?",
+        route_number="Optional route identifier (e.g., 1 or New Bark Town) for encounter-based soul linking"
     )
     async def add_pokemon(self, interaction: discord.Interaction, player_id: int, pokemon_name: str,
-                         pokemon_type: str, level: int = 1, is_starter: bool = False):
+                         pokemon_type: str, level: int = 1, is_starter: bool = False,
+                         route_number: str = None):
         """Add a Pokemon to a player's team."""
         try:
+            if route_number is not None:
+                route_number = route_number.strip().lower()
+
             # Validate type
             if pokemon_type not in POKEMON_TYPES:
                 embed = create_embed("❌ Invalid Type", f"Unknown type: {pokemon_type}\nValid types: {', '.join(POKEMON_TYPES)}", discord.Color.red())
@@ -49,21 +54,51 @@ class TeamManagement(commands.Cog):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
 
+            # If a route identifier is provided, make sure this player has an encounter on it.
+            # This enables proper multi-player soul link propagation for manually added Pokemon.
+            if route_number is not None:
+                async with aiosqlite.connect(DATABASE_PATH) as db:
+                    async with db.execute(
+                        """SELECT e.encounter_id
+                           FROM encounters e
+                           JOIN routes r ON e.route_id = r.route_id
+                           WHERE e.player_id = ? AND r.run_id = ? AND LOWER(r.route_number) = LOWER(?)""",
+                        (player_id, player[1], route_number)
+                    ) as cursor:
+                        encounter = await cursor.fetchone()
+
+                if not encounter:
+                    embed = create_embed(
+                        "❌ Missing Encounter",
+                        f"No encounter found for player {player_id} on route {route_number}. "
+                        "Record the encounter first with `/record_encounter`, then retry.",
+                        discord.Color.red()
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+
             # Add Pokemon to team
             member_id = await db_utils.add_team_member(
                 player_id,
                 pokemon_name,
                 pokemon_type,
                 level,
-                is_starter
+                is_starter,
+                route_number
             )
 
             embed = create_embed(
                 "✅ Pokemon Added",
-                f"**{pokemon_name}** (Level {level}, Type: {pokemon_type}){'- Starter!' if is_starter else ''}",
+                f"**{pokemon_name}** (Level {level}, Type: {pokemon_type}){' - Starter!' if is_starter else ''}",
                 discord.Color.green()
             )
             embed.add_field(name="Member ID", value=member_id, inline=False)
+            if route_number is not None:
+                embed.add_field(
+                    name="🔗 Soul Link Route",
+                    value=f"Linked to route {route_number} encounter group (if linked encounters exist).",
+                    inline=False
+                )
 
             await interaction.response.send_message(embed=embed)
         except Exception as e:
@@ -213,7 +248,7 @@ class TeamManagement(commands.Cog):
                         """SELECT DISTINCT tm.member_id, tm.pokemon_name, rp.player_id FROM team_members tm
                            JOIN encounters e ON e.pokemon_name = tm.pokemon_name
                            JOIN routes r ON e.route_id = r.route_id
-                           WHERE r.route_number = ? AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
+                           WHERE LOWER(r.route_number) = LOWER(?) AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
                            AND tm.player_id != ? AND tm.status != 'FAINTED'""",
                         (route_encountered, member[1], member[1])
                     ) as cursor:
@@ -253,7 +288,7 @@ class TeamManagement(commands.Cog):
                            JOIN encounters e ON e.pokemon_name = tm.pokemon_name
                            JOIN routes r ON e.route_id = r.route_id
                            JOIN run_players rp ON rp.player_id = tm.player_id
-                           WHERE r.route_number = ? AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
+                           WHERE LOWER(r.route_number) = LOWER(?) AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
                            AND tm.player_id != ?""",
                         (route_encountered, member[1], member[1])
                     ) as cursor:
@@ -360,7 +395,7 @@ class TeamManagement(commands.Cog):
                         """SELECT DISTINCT tm.member_id, tm.pokemon_name FROM team_members tm
                            JOIN encounters e ON e.pokemon_name = tm.pokemon_name
                            JOIN routes r ON e.route_id = r.route_id
-                           WHERE r.route_number = ? AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
+                           WHERE LOWER(r.route_number) = LOWER(?) AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
                            AND tm.player_id != ? AND tm.status != 'BOXED'""",
                         (route_encountered, member[1], member[1])
                     ) as cursor:
@@ -463,7 +498,7 @@ class TeamManagement(commands.Cog):
                         """SELECT DISTINCT tm.member_id, tm.pokemon_name FROM team_members tm
                            JOIN encounters e ON e.pokemon_name = tm.pokemon_name
                            JOIN routes r ON e.route_id = r.route_id
-                           WHERE r.route_number = ? AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
+                           WHERE LOWER(r.route_number) = LOWER(?) AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
                            AND tm.player_id != ? AND tm.status != 'RELEASED'""",
                         (route_encountered, member[1], member[1])
                     ) as cursor:
@@ -593,7 +628,7 @@ class TeamManagement(commands.Cog):
                         """SELECT DISTINCT tm.member_id, tm.pokemon_name FROM team_members tm
                            JOIN encounters e ON e.pokemon_name = tm.pokemon_name
                            JOIN routes r ON e.route_id = r.route_id
-                           WHERE r.route_number = ? AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
+                           WHERE LOWER(r.route_number) = LOWER(?) AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
                            AND tm.player_id != ? AND tm.status = 'BOXED'""",
                         (route_encountered, member[1], member[1])
                     ) as cursor:
