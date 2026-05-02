@@ -20,11 +20,17 @@ class SoulLink(commands.Cog):
         encounter_id_1="First encounter ID (optional - use with other encounter_ids instead of route)",
         encounter_id_2="Second encounter ID (optional)",
         encounter_id_3="Third encounter ID for 3-player (optional)",
-        encounter_id_4="Fourth encounter ID for 4-player (optional)"
+        encounter_id_4="Fourth encounter ID for 4-player (optional)",
+        member_id_1="First team member ID (manual /add_pokemon linking mode)",
+        member_id_2="Second team member ID (manual /add_pokemon linking mode)",
+        member_id_3="Third team member ID (optional)",
+        member_id_4="Fourth team member ID (optional)"
     )
     async def link_pokemon(self, interaction: discord.Interaction, run_id: int = None, route_number: str = None,
                           encounter_id_1: int = None, encounter_id_2: int = None,
-                          encounter_id_3: int = None, encounter_id_4: int = None):
+                          encounter_id_3: int = None, encounter_id_4: int = None,
+                          member_id_1: int = None, member_id_2: int = None,
+                          member_id_3: int = None, member_id_4: int = None):
         """Link Pokemon encounters as Soul Link partners (supports 2-4 players)."""
         try:
             await interaction.response.defer()
@@ -44,10 +50,19 @@ class SoulLink(commands.Cog):
                     encounter_ids.append(encounter_id_4)
 
                 await self._link_by_encounters(interaction, encounter_ids)
+            elif member_id_1 is not None and member_id_2 is not None:
+                # MODE 3: Link specific team members (for /add_pokemon non-encounter mons)
+                member_ids = [member_id_1, member_id_2]
+                if member_id_3 is not None:
+                    member_ids.append(member_id_3)
+                if member_id_4 is not None:
+                    member_ids.append(member_id_4)
+
+                await self._link_by_team_members(interaction, member_ids)
             else:
                 embed = create_embed(
                     "❌ Error",
-                    "Please provide EITHER:\n• `run_id:X route_number:Y` to link all encounters on a route\nOR\n• `encounter_id_1:X encounter_id_2:Y` (and optionally encounter_id_3, encounter_id_4)",
+                    "Please provide ONE mode:\n• `run_id:X route_number:Y` to link by route\n• `encounter_id_1:X encounter_id_2:Y` to link encounters\n• `member_id_1:X member_id_2:Y` to link manually added team members",
                     discord.Color.red()
                 )
                 await interaction.followup.send(embed=embed, ephemeral=True)
@@ -244,6 +259,59 @@ class SoulLink(commands.Cog):
             inline=False
         )
 
+        await interaction.followup.send(embed=embed)
+
+    async def _link_by_team_members(self, interaction: discord.Interaction, member_ids: list):
+        """Link specific team members provided by user (manual linking mode)."""
+        if len(member_ids) < 2 or len(member_ids) > 4:
+            embed = create_embed("❌ Error", "Please provide 2-4 member IDs", discord.Color.red())
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        members = []
+        async with aiosqlite.connect(DATABASE_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            for member_id in member_ids:
+                async with db.execute(
+                    """SELECT tm.member_id, tm.player_id, tm.pokemon_name, tm.pokemon_type, rp.discord_name, rp.run_id
+                       FROM team_members tm
+                       JOIN run_players rp ON tm.player_id = rp.player_id
+                       WHERE tm.member_id = ?""",
+                    (member_id,)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if not row:
+                        embed = create_embed("❌ Error", f"Member ID {member_id} not found", discord.Color.red())
+                        await interaction.followup.send(embed=embed, ephemeral=True)
+                        return
+                    members.append(row)
+
+        run_ids = {row['run_id'] for row in members}
+        if len(run_ids) != 1:
+            embed = create_embed("❌ Error", "All member IDs must belong to the same run", discord.Color.red())
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        # Link all members pairwise so any one can propagate to all others.
+        for i in range(len(member_ids)):
+            for j in range(i + 1, len(member_ids)):
+                await db_utils.link_team_member_pair(member_ids[i], member_ids[j])
+
+        member_info = ""
+        for row in members:
+            member_info += f"📍 {row['discord_name']}: **{row['pokemon_name']}** ({row['pokemon_type']}) - ID {row['member_id']}\n"
+
+        embed = create_embed(
+            "🔗 Team Members Linked",
+            f"All {len(member_ids)} manually added Pokemon are now linked together",
+            discord.Color.purple()
+        )
+        embed.add_field(name="Linked Team Members", value=member_info.strip(), inline=False)
+        embed.add_field(
+            name="⚠️ Soul Link Rules Now Active",
+            value="If one linked Pokemon faints/boxes/releases/unboxes, all linked members update too.",
+            inline=False
+        )
         await interaction.followup.send(embed=embed)
 
     async def _link_encounters_together(self, encounter_ids: list):

@@ -87,6 +87,19 @@ async def init_db():
             )
         """)
 
+        # Manual Team Member Links table (for Pokemon added outside encounters, e.g. gifts)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS team_member_links (
+                link_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                member_id_1 INTEGER NOT NULL,
+                member_id_2 INTEGER NOT NULL,
+                linked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (member_id_1) REFERENCES team_members(member_id) ON DELETE CASCADE,
+                FOREIGN KEY (member_id_2) REFERENCES team_members(member_id) ON DELETE CASCADE,
+                UNIQUE(member_id_1, member_id_2)
+            )
+        """)
+
         # Team Members table (all Pokemon on a player's team)
         await db.execute("""
             CREATE TABLE IF NOT EXISTS team_members (
@@ -333,6 +346,50 @@ async def link_pokemon_pair(encounter_id_1: int, encounter_id_2: int):
         await db.commit()
 
 
+async def link_team_member_pair(member_id_1: int, member_id_2: int):
+    """Link two team members directly (for manual /add_pokemon linking)."""
+    if member_id_1 == member_id_2:
+        return
+
+    left_id = min(member_id_1, member_id_2)
+    right_id = max(member_id_1, member_id_2)
+
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """SELECT link_id FROM team_member_links
+               WHERE member_id_1 = ? AND member_id_2 = ?""",
+            (left_id, right_id)
+        ) as cursor:
+            if await cursor.fetchone():
+                return
+
+        await db.execute(
+            """INSERT INTO team_member_links (member_id_1, member_id_2)
+               VALUES (?, ?)""",
+            (left_id, right_id)
+        )
+        await db.commit()
+
+
+async def get_linked_team_member_ids(member_id: int):
+    """Get directly linked team member IDs (plus self)."""
+    linked_ids = {member_id}
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """SELECT member_id_1, member_id_2
+               FROM team_member_links
+               WHERE member_id_1 = ? OR member_id_2 = ?""",
+            (member_id, member_id)
+        ) as cursor:
+            links = await cursor.fetchall()
+
+        for left_id, right_id in links:
+            linked_ids.add(left_id)
+            linked_ids.add(right_id)
+
+    return list(linked_ids)
+
+
 async def add_team_member(player_id: int, pokemon_name: str, pokemon_type: str = "",
                            level: int = 1, is_starter: bool = False,
                            route_encountered: Optional[str] = None):
@@ -463,6 +520,16 @@ async def unbox_pokemon(member_id: int):
                      (linked_row[0],)
                  )
                  await db.commit()
+
+         # Manual team-member links mode: unbox all manually linked members
+         linked_member_ids = await get_linked_team_member_ids(member_id)
+         for linked_member_id in linked_member_ids:
+             if linked_member_id != member_id:
+                 await db.execute(
+                     "UPDATE team_members SET status = 'ACTIVE' WHERE member_id = ?",
+                     (linked_member_id,)
+                 )
+         await db.commit()
 
          # For 3+ player mode: Get all linked encounters via soul_link_pairs
          route_encountered = row[1]
@@ -675,6 +742,16 @@ async def faint_all_linked_pokemon(member_id: int):
                  )
                  await db.commit()
 
+         # Manual team-member links mode: faint all manually linked members
+         linked_member_ids = await get_linked_team_member_ids(member_id)
+         for linked_member_id in linked_member_ids:
+             if linked_member_id != member_id:
+                 await db.execute(
+                     "UPDATE team_members SET status = 'FAINTED' WHERE member_id = ?",
+                     (linked_member_id,)
+                 )
+         await db.commit()
+
          # For 3+ player mode: Get all linked encounters via soul_link_pairs
          route_encountered = row[1]
          if route_encountered:
@@ -750,6 +827,16 @@ async def box_all_linked_pokemon(member_id: int):
                  )
                  await db.commit()
 
+         # Manual team-member links mode: box all manually linked members
+         linked_member_ids = await get_linked_team_member_ids(member_id)
+         for linked_member_id in linked_member_ids:
+             if linked_member_id != member_id:
+                 await db.execute(
+                     "UPDATE team_members SET status = 'BOXED' WHERE member_id = ?",
+                     (linked_member_id,)
+                 )
+         await db.commit()
+
          # For 3+ player mode: Get all linked encounters via soul_link_pairs
          route_encountered = row[1]
          if route_encountered:
@@ -824,6 +911,16 @@ async def release_all_linked_pokemon(member_id: int):
                      (linked_row[0],)
                  )
                  await db.commit()
+
+         # Manual team-member links mode: release all manually linked members
+         linked_member_ids = await get_linked_team_member_ids(member_id)
+         for linked_member_id in linked_member_ids:
+             if linked_member_id != member_id:
+                 await db.execute(
+                     "UPDATE team_members SET status = 'RELEASED' WHERE member_id = ?",
+                     (linked_member_id,)
+                 )
+         await db.commit()
 
          # For 3+ player mode: Get all linked encounters via soul_link_pairs
          route_encountered = row[1]

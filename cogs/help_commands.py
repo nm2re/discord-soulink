@@ -171,7 +171,7 @@ class HelpCommands(commands.Cog):
 
             "📚 Team Management": {
                 "/add_pokemon": {
-                    "description": "Manually add a Pokemon to a player's team (rarely needed - use /record_encounter instead)",
+                    "description": "Manually add a Pokemon to a player's team (useful for gifts/static encounters)",
                     "usage": '/add_pokemon player_id:1 pokemon_name:"Charizard" pokemon_type:"Fire" level:25 is_starter:true route_number:"New Bark Town"',
                     "parameters": [
                         ("player_id", "Your player ID (required)"),
@@ -181,7 +181,7 @@ class HelpCommands(commands.Cog):
                         ("is_starter", "Is this your starter? true/false, default false (optional)"),
                         ("route_number", "Optional route identifier (number or name) to attach encounter-based soul link behavior")
                     ],
-                    "note": "ℹ️ Most of the time, use /record_encounter instead - it automatically adds and links Pokemon. Use route_number here if you need manual add with soul-link propagation."
+                    "note": "ℹ️ Use this for non-route encounters (gifts, statics, etc.). Then link manually with `/link_pokemon member_id_1:X member_id_2:Y`."
                 },
                 "/view_team": {
                     "description": "View a player's complete Pokemon team (active, boxed, fainted, released)",
@@ -226,13 +226,17 @@ class HelpCommands(commands.Cog):
 
             "📚 Soul Link": {
                 "/link_pokemon": {
-                    "description": "Manually link Pokemon encounters on a route as Soul Link partners",
-                    "usage": '/link_pokemon run_id:1 route_number:"New Bark Town"',
+                    "description": "Manually link by route, encounter IDs, or team member IDs",
+                    "usage": '/link_pokemon member_id_1:4001 member_id_2:4002',
                     "parameters": [
                         ("run_id", "The run ID (required for route linking)"),
-                        ("route_number", "Route identifier to link, e.g., 1 or New Bark Town (required for route linking)")
+                        ("route_number", "Route identifier to link, e.g., 1 or New Bark Town (for route mode)"),
+                        ("encounter_id_1", "First encounter ID (for encounter mode)"),
+                        ("encounter_id_2", "Second encounter ID (for encounter mode)"),
+                        ("member_id_1", "First team member ID (for manual /add_pokemon mode)"),
+                        ("member_id_2", "Second team member ID (for manual /add_pokemon mode)")
                     ],
-                    "note": "ℹ️ Most of the time you don't need this! Pokemon on the same route are automatically linked when they're recorded with /record_encounter. Use this only for manual linking of specific encounters."
+                    "note": "ℹ️ Route encounters auto-link with /record_encounter. Use member_id mode for gifts/statics added through /add_pokemon."
                 },
                 "/soul_link_status": {
                     "description": "View all Soul Link groups in a run",
