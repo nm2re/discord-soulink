@@ -201,7 +201,41 @@ class TeamManagement(commands.Cog):
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
 
-            # Faint Pokemon
+            # Get all linked Pokemon before fainting (to track them for the response)
+            linked_pokemon_info = ""
+            route_encountered = member[8]  # route_encountered is at index 8
+
+            if route_encountered:
+                # Get all Pokemon on the same route from other players (3+ player mode)
+                async with aiosqlite.connect(DATABASE_PATH) as db:
+                    db.row_factory = aiosqlite.Row
+                    async with db.execute(
+                        """SELECT DISTINCT tm.member_id, tm.pokemon_name, rp.player_id FROM team_members tm
+                           JOIN encounters e ON e.pokemon_name = tm.pokemon_name
+                           JOIN routes r ON e.route_id = r.route_id
+                           WHERE r.route_number = ? AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
+                           AND tm.player_id != ? AND tm.status != 'FAINTED'""",
+                        (route_encountered, member[1], member[1])
+                    ) as cursor:
+                        linked_members = await cursor.fetchall()
+
+                    for linked_mon in linked_members:
+                        linked_pokemon_info += f"• **{linked_mon['pokemon_name']}**\n"
+
+            # Also check for old 2-player style linked_member_id (for backward compatibility)
+            if member[10]:  # linked_member_id is at index 10
+                async with aiosqlite.connect(DATABASE_PATH) as db:
+                    async with db.execute(
+                        "SELECT * FROM team_members WHERE member_id = ?",
+                        (member[10],)
+                    ) as cursor:
+                        linked_member = await cursor.fetchone()
+                    
+                    if linked_member and linked_member[6] != 'FAINTED':
+                        if f"• **{linked_member[2]}**\n" not in linked_pokemon_info:
+                            linked_pokemon_info += f"• **{linked_member[2]}**\n"
+
+            # Faint Pokemon (and all linked ones)
             await db_utils.faints_pokemon(member_id)
 
             # Update death count for current player
@@ -210,6 +244,40 @@ class TeamManagement(commands.Cog):
                     "UPDATE run_players SET deaths = deaths + 1 WHERE player_id = ?",
                     (member[1],)
                 )
+
+                # Update death counts for all linked players
+                if route_encountered:
+                    db.row_factory = aiosqlite.Row
+                    async with db.execute(
+                        """SELECT DISTINCT rp.player_id FROM team_members tm
+                           JOIN encounters e ON e.pokemon_name = tm.pokemon_name
+                           JOIN routes r ON e.route_id = r.route_id
+                           JOIN run_players rp ON rp.player_id = tm.player_id
+                           WHERE r.route_number = ? AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
+                           AND tm.player_id != ?""",
+                        (route_encountered, member[1], member[1])
+                    ) as cursor:
+                        linked_players = await cursor.fetchall()
+
+                    for linked_player in linked_players:
+                        await db.execute(
+                            "UPDATE run_players SET deaths = deaths + 1 WHERE player_id = ?",
+                            (linked_player['player_id'],)
+                        )
+
+                # Handle 2-player mode backward compatibility
+                if member[10]:
+                    async with db.execute(
+                        "SELECT player_id FROM team_members WHERE member_id = ?",
+                        (member[10],)
+                    ) as cursor:
+                        linked_result = await cursor.fetchone()
+                        if linked_result:
+                            await db.execute(
+                                "UPDATE run_players SET deaths = deaths + 1 WHERE player_id = ?",
+                                (linked_result[0],)
+                            )
+
                 await db.commit()
 
             # Get run_id for logging
@@ -236,32 +304,12 @@ class TeamManagement(commands.Cog):
                 discord.Color.orange()
             )
 
-            # Check if linked and update linked player's death count
-            linked_pokemon_name = None
-            if member[10]:  # linked_member_id is at index 10
-                async with aiosqlite.connect(DATABASE_PATH) as db:
-                    # Get linked Pokemon info
-                    async with db.execute(
-                        "SELECT * FROM team_members WHERE member_id = ?",
-                        (member[10],)
-                    ) as cursor:
-                        linked_member = await cursor.fetchone()
-                    
-                    if linked_member:
-                        linked_pokemon_name = linked_member[2]  # pokemon_name
-                        # Update linked player's death count
-                        await db.execute(
-                            "UPDATE run_players SET deaths = deaths + 1 WHERE player_id = ?",
-                            (linked_member[1],)  # linked member's player_id
-                        )
-                        await db.commit()
-                
-                if linked_pokemon_name:
-                    embed.add_field(
-                        name="⚠️ Soul Link",
-                        value=f"Linked Pokemon **{linked_pokemon_name}** has also fainted!",
-                        inline=False
-                    )
+            if linked_pokemon_info:
+                embed.add_field(
+                    name="⚠️ Soul Link",
+                    value=f"Linked Pokemon also fainted:\n{linked_pokemon_info.strip()}",
+                    inline=False
+                )
 
             await interaction.followup.send(embed=embed)
         except Exception as e:
@@ -300,7 +348,39 @@ class TeamManagement(commands.Cog):
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
 
-             # Box Pokemon
+            # Get all linked Pokemon before boxing (to track them for the response)
+            linked_pokemon_info = ""
+            route_encountered = member[8]  # route_encountered is at index 8
+
+            if route_encountered:
+                # Get all Pokemon on the same route from other players (3+ player mode)
+                async with aiosqlite.connect(DATABASE_PATH) as db:
+                    db.row_factory = aiosqlite.Row
+                    async with db.execute(
+                        """SELECT DISTINCT tm.member_id, tm.pokemon_name FROM team_members tm
+                           JOIN encounters e ON e.pokemon_name = tm.pokemon_name
+                           JOIN routes r ON e.route_id = r.route_id
+                           WHERE r.route_number = ? AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
+                           AND tm.player_id != ? AND tm.status != 'BOXED'""",
+                        (route_encountered, member[1], member[1])
+                    ) as cursor:
+                        linked_members = await cursor.fetchall()
+
+                    for linked_mon in linked_members:
+                        linked_pokemon_info += f"• **{linked_mon['pokemon_name']}**\n"
+
+            # Also check for old 2-player style linked_member_id (for backward compatibility)
+            if member[10]:  # linked_member_id is at index 10
+                async with aiosqlite.connect(DATABASE_PATH) as db:
+                    async with db.execute(
+                        "SELECT pokemon_name FROM team_members WHERE member_id = ?",
+                        (member[10],)
+                    ) as cursor:
+                        linked_result = await cursor.fetchone()
+                        if linked_result and f"• **{linked_result[0]}**\n" not in linked_pokemon_info:
+                            linked_pokemon_info += f"• **{linked_result[0]}**\n"
+
+            # Box Pokemon (and all linked ones)
             await db_utils.box_pokemon(member_id)
 
             # Get run_id for logging
@@ -327,21 +407,12 @@ class TeamManagement(commands.Cog):
                 discord.Color.green()
             )
 
-            # Check if linked and show linked Pokemon name
-            if member[10]:  # linked_member_id is at index 10
-                async with aiosqlite.connect(DATABASE_PATH) as db:
-                    async with db.execute(
-                        "SELECT pokemon_name FROM team_members WHERE member_id = ?",
-                        (member[10],)
-                    ) as cursor:
-                        linked_result = await cursor.fetchone()
-                        if linked_result:
-                            linked_pokemon_name = linked_result[0]
-                            embed.add_field(
-                                name="⚠️ Soul Link",
-                                value=f"Linked Pokemon **{linked_pokemon_name}** has also been boxed!",
-                                inline=False
-                            )
+            if linked_pokemon_info:
+                embed.add_field(
+                    name="⚠️ Soul Link",
+                    value=f"Linked Pokemon also boxed:\n{linked_pokemon_info.strip()}",
+                    inline=False
+                )
 
             await interaction.response.send_message(embed=embed)
         except Exception as e:
@@ -380,7 +451,39 @@ class TeamManagement(commands.Cog):
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
 
-              # Release Pokemon
+            # Get all linked Pokemon before releasing (to track them for the response)
+            linked_pokemon_info = ""
+            route_encountered = member[8]  # route_encountered is at index 8
+
+            if route_encountered:
+                # Get all Pokemon on the same route from other players (3+ player mode)
+                async with aiosqlite.connect(DATABASE_PATH) as db:
+                    db.row_factory = aiosqlite.Row
+                    async with db.execute(
+                        """SELECT DISTINCT tm.member_id, tm.pokemon_name FROM team_members tm
+                           JOIN encounters e ON e.pokemon_name = tm.pokemon_name
+                           JOIN routes r ON e.route_id = r.route_id
+                           WHERE r.route_number = ? AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
+                           AND tm.player_id != ? AND tm.status != 'RELEASED'""",
+                        (route_encountered, member[1], member[1])
+                    ) as cursor:
+                        linked_members = await cursor.fetchall()
+
+                    for linked_mon in linked_members:
+                        linked_pokemon_info += f"• **{linked_mon['pokemon_name']}**\n"
+
+            # Also check for old 2-player style linked_member_id (for backward compatibility)
+            if member[10]:  # linked_member_id is at index 10
+                async with aiosqlite.connect(DATABASE_PATH) as db:
+                    async with db.execute(
+                        "SELECT pokemon_name FROM team_members WHERE member_id = ?",
+                        (member[10],)
+                    ) as cursor:
+                        linked_result = await cursor.fetchone()
+                        if linked_result and f"• **{linked_result[0]}**\n" not in linked_pokemon_info:
+                            linked_pokemon_info += f"• **{linked_result[0]}**\n"
+
+            # Release Pokemon (and all linked ones)
             await db_utils.release_pokemon(member_id)
 
             # Get run_id for logging
@@ -407,21 +510,12 @@ class TeamManagement(commands.Cog):
                 discord.Color.purple()
             )
 
-            # Check if linked and show linked Pokemon name
-            if member[10]:  # linked_member_id is at index 10
-                async with aiosqlite.connect(DATABASE_PATH) as db:
-                    async with db.execute(
-                        "SELECT pokemon_name FROM team_members WHERE member_id = ?",
-                        (member[10],)
-                    ) as cursor:
-                        linked_result = await cursor.fetchone()
-                        if linked_result:
-                            linked_pokemon_name = linked_result[0]
-                            embed.add_field(
-                                name="⚠️ Soul Link",
-                                value=f"Linked Pokemon **{linked_pokemon_name}** has also been released!",
-                                inline=False
-                            )
+            if linked_pokemon_info:
+                embed.add_field(
+                    name="⚠️ Soul Link",
+                    value=f"Linked Pokemon also released:\n{linked_pokemon_info.strip()}",
+                    inline=False
+                )
 
             await interaction.response.send_message(embed=embed)
         except Exception as e:
@@ -487,7 +581,30 @@ class TeamManagement(commands.Cog):
                 discord.Color.blue()
             )
 
-            # Check if linked and show linked Pokemon name
+            # Check for linked Pokemon (both 2-player and 3+ player modes)
+            route_encountered = member[8]  # route_encountered is at index 8
+            linked_pokemon_info = ""
+
+            if route_encountered:
+                # Get all Pokemon on the same route from other players
+                async with aiosqlite.connect(DATABASE_PATH) as db:
+                    db.row_factory = aiosqlite.Row
+                    async with db.execute(
+                        """SELECT DISTINCT tm.member_id, tm.pokemon_name FROM team_members tm
+                           JOIN encounters e ON e.pokemon_name = tm.pokemon_name
+                           JOIN routes r ON e.route_id = r.route_id
+                           WHERE r.route_number = ? AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
+                           AND tm.player_id != ? AND tm.status = 'BOXED'""",
+                        (route_encountered, member[1], member[1])
+                    ) as cursor:
+                        linked_members = await cursor.fetchall()
+
+                # Unbox all linked Pokemon
+                for linked_mon in linked_members:
+                    await db_utils.unbox_pokemon(linked_mon['member_id'])
+                    linked_pokemon_info += f"• **{linked_mon['pokemon_name']}**\n"
+
+            # Also check for old 2-player style linked_member_id (for backward compatibility)
             if member[10]:  # linked_member_id is at index 10
                 async with aiosqlite.connect(DATABASE_PATH) as db:
                     async with db.execute(
@@ -495,13 +612,15 @@ class TeamManagement(commands.Cog):
                         (member[10],)
                     ) as cursor:
                         linked_result = await cursor.fetchone()
-                        if linked_result:
-                            linked_pokemon_name = linked_result[0]
-                            embed.add_field(
-                                name="⚠️ Soul Link",
-                                value=f"Linked Pokemon **{linked_pokemon_name}** has also been unboxed!",
-                                inline=False
-                            )
+                        if linked_result and f"• **{linked_result[0]}**\n" not in linked_pokemon_info:
+                            linked_pokemon_info += f"• **{linked_result[0]}**\n"
+
+            if linked_pokemon_info:
+                embed.add_field(
+                    name="⚠️ Soul Link",
+                    value=f"Linked Pokemon also unboxed:\n{linked_pokemon_info.strip()}",
+                    inline=False
+                )
 
             await interaction.response.send_message(embed=embed)
         except Exception as e:
