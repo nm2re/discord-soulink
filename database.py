@@ -848,40 +848,40 @@ async def get_route_id(run_id: int, route_number: int):
 
 
 async def auto_link_route_encounters(route_id: int):
-    """Automatically link all encounters on a route (2-4 players).
-    Returns tuple of (success, message, linked_count)."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT encounter_id, pokemon_name FROM encounters WHERE route_id = ? ORDER BY player_id",
-            (route_id,)
-        ) as cursor:
-            encounters = await cursor.fetchall()
-    
-    # Need at least 2 encounters to link
-    if len(encounters) < 2:
-        return False, "Need at least 2 encounters to auto-link", 0
-    
-    # Check if already linked
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        async with db.execute(
-            """SELECT COUNT(*) FROM soul_link_pairs slp
-               WHERE slp.encounter_id_1 IN (SELECT encounter_id FROM encounters WHERE route_id = ?)
-               OR slp.encounter_id_2 IN (SELECT encounter_id FROM encounters WHERE route_id = ?)""",
-            (route_id, route_id)
-        ) as cursor:
-            existing_links = (await cursor.fetchone())[0]
-    
-    if existing_links > 0:
-        # Already linked, return info
-        return True, f"Route encounters already linked", 0
-    
-    # Link all encounters together
-    linked_count = 0
-    for i in range(len(encounters)):
-        for j in range(i + 1, len(encounters)):
-            await link_pokemon_pair(encounters[i]['encounter_id'], encounters[j]['encounter_id'])
-            linked_count += 1
-    
-    return True, f"Auto-linked {len(encounters)} Pokemon on this route", linked_count
+     """Automatically link all encounters on a route (2-4 players).
+     Returns tuple of (success, message, linked_count)."""
+     async with aiosqlite.connect(DATABASE_PATH) as db:
+         db.row_factory = aiosqlite.Row
+         async with db.execute(
+             "SELECT encounter_id, pokemon_name FROM encounters WHERE route_id = ? ORDER BY player_id",
+             (route_id,)
+         ) as cursor:
+             encounters = await cursor.fetchall()
+     
+     # Need at least 2 encounters to link
+     if len(encounters) < 2:
+         return False, "Waiting for other players", 0
+     
+     # Check if already linked
+     async with aiosqlite.connect(DATABASE_PATH) as db:
+         async with db.execute(
+             """SELECT COUNT(*) FROM soul_link_pairs slp
+                WHERE slp.encounter_id_1 IN (SELECT encounter_id FROM encounters WHERE route_id = ?)
+                OR slp.encounter_id_2 IN (SELECT encounter_id FROM encounters WHERE route_id = ?)""",
+             (route_id, route_id)
+         ) as cursor:
+             existing_links = (await cursor.fetchone())[0]
+     
+     if existing_links > 0:
+         # Already linked, return with special indicator
+         return True, f"Already linked", -1
+     
+     # Link all encounters together
+     linked_count = 0
+     for i in range(len(encounters)):
+         for j in range(i + 1, len(encounters)):
+             await link_pokemon_pair(encounters[i]['encounter_id'], encounters[j]['encounter_id'])
+             linked_count += 1
+     
+     return True, f"Auto-linked {len(encounters)} Pokemon on this route", linked_count
 

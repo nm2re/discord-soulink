@@ -205,12 +205,15 @@ class RouteTracking(commands.Cog):
             embed.add_field(name="Team Member ID", value=member_id, inline=False)
 
             # Add Soul Link info to embed
-            if auto_link_success and linked_count > 0:
+            if linked_count > 0:
+                # Successfully linked now
                 embed.add_field(name="🔗 Soul Link Status", value=f"✅ {auto_link_msg}", inline=False)
-            elif auto_link_success and linked_count == 0:
+            elif linked_count == -1:
+                # Already linked previously
+                embed.add_field(name="🔗 Soul Link Status", value=f"✅ {auto_link_msg} - All Pokemon on this route are soul linked!", inline=False)
+            elif not auto_link_success:
+                # Waiting for other players
                 embed.add_field(name="🔗 Soul Link Status", value=f"⏳ {auto_link_msg}\nWaiting for other players to record encounters on this route", inline=False)
-            else:
-                embed.add_field(name="Next Steps", value="All players can record their Route encounters, then link them with `/link_pokemon route_id:X`", inline=False)
 
             await interaction.followup.send(embed=embed)
         except Exception as e:
