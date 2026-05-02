@@ -328,154 +328,172 @@ async def link_pokemon_pair(encounter_id_1: int, encounter_id_2: int):
 
 
 async def add_team_member(player_id: int, pokemon_name: str, pokemon_type: str = "",
-                          level: int = 1, is_starter: bool = False,
-                          route_encountered: Optional[int] = None):
-    """Add a Pokemon to a player's team."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute(
-            """INSERT INTO team_members (player_id, pokemon_name, pokemon_type, level, 
-                                        is_starter, route_encountered, is_encountered)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (player_id, pokemon_name, pokemon_type, level, 1 if is_starter else 0,
-             route_encountered, 1 if route_encountered else 0)
-        )
-        await db.commit()
+                           level: int = 1, is_starter: bool = False,
+                           route_encountered: Optional[int] = None):
+     """Add a Pokemon to a player's team."""
+     async with aiosqlite.connect(DATABASE_PATH) as db:
+         await db.execute(
+             """INSERT INTO team_members (player_id, pokemon_name, pokemon_type, level, 
+                                         is_starter, route_encountered, is_encountered)
+                VALUES (?, ?, ?, ?, ?, ?, ?)""",
+             (player_id, pokemon_name, pokemon_type, level, 1 if is_starter else 0,
+              route_encountered, 1 if route_encountered else 0)
+         )
+         await db.commit()
 
-        async with db.execute(
-            "SELECT last_insert_rowid() as member_id"
-        ) as cursor:
-            result = await cursor.fetchone()
-            member_id = result[0]
-        
-        # If this Pokemon came from a linked encounter, find and link the partner team members
-        if route_encountered:
-            # Get all encounters on this route that are linked to this one
-            async with db.execute(
-                """SELECT e.encounter_id FROM encounters e
-                   JOIN routes r ON e.route_id = r.route_id
-                   WHERE r.route_id = (SELECT route_id FROM routes WHERE route_number = ? 
-                                       AND run_id = (SELECT run_id FROM run_players WHERE player_id = ?))""",
-                (route_encountered, player_id)
-            ) as cursor:
-                route_encounters = await cursor.fetchall()
-            
-            # Link this team member to any team members from linked encounters
-            for (enc_id,) in route_encounters:
-                async with db.execute(
-                    """SELECT tm.member_id FROM team_members tm
-                       JOIN run_players rp ON tm.player_id = rp.player_id
-                       JOIN encounters e ON tm.pokemon_name = e.pokemon_name
-                       WHERE e.encounter_id = ? AND tm.player_id != ? AND tm.status = 'ACTIVE'""",
-                    (enc_id, player_id)
-                ) as cursor:
-                    linked_members = await cursor.fetchall()
-                
-                # Link them together (bidirectionally)
-                for (linked_member_id,) in linked_members:
-                    await db.execute(
-                        "UPDATE team_members SET linked_member_id = ? WHERE member_id = ?",
-                        (linked_member_id, member_id)
-                    )
-                    await db.execute(
-                        "UPDATE team_members SET linked_member_id = ? WHERE member_id = ?",
-                        (member_id, linked_member_id)
-                    )
-            
-            await db.commit()
+         async with db.execute(
+             "SELECT last_insert_rowid() as member_id"
+         ) as cursor:
+             result = await cursor.fetchone()
+             member_id = result[0]
 
-        return member_id
+         # If this Pokemon came from a linked encounter, find and link the partner team members
+         if route_encountered:
+             # Get the route_id for this route number and run
+             async with db.execute(
+                 """SELECT route_id FROM routes WHERE route_number = ? 
+                    AND run_id = (SELECT run_id FROM run_players WHERE player_id = ?)""",
+                 (route_encountered, player_id)
+             ) as cursor:
+                 route_result = await cursor.fetchone()
+                 if route_result:
+                     route_id = route_result[0]
+
+                     # Get the encounter for THIS player on this route
+                     async with db.execute(
+                         "SELECT encounter_id FROM encounters WHERE route_id = ? AND player_id = ?",
+                         (route_id, player_id)
+                     ) as cursor:
+                         my_encounter = await cursor.fetchone()
+
+                     if my_encounter:
+                         my_enc_id = my_encounter[0]
+
+                         # Find all encounters linked to THIS encounter (2, 3, or 4 players)
+                         async with db.execute(
+                             """SELECT DISTINCT encounter_id FROM (
+                                 SELECT encounter_id_1 as encounter_id FROM soul_link_pairs WHERE encounter_id_2 = ?
+                                 UNION
+                                 SELECT encounter_id_2 as encounter_id FROM soul_link_pairs WHERE encounter_id_1 = ?
+                                 UNION
+                                 SELECT ? as encounter_id
+                             )""",
+                             (my_enc_id, my_enc_id, my_enc_id)
+                         ) as cursor:
+                             linked_encounters = await cursor.fetchall()
+
+                         # Get all team members from the linked encounters (excluding this player)
+                         linked_member_ids = []
+                         for (enc_id,) in linked_encounters:
+                             async with db.execute(
+                                 """SELECT tm.member_id FROM team_members tm
+                                    JOIN encounters e ON e.encounter_id = ?
+                                    WHERE tm.player_id = e.player_id AND tm.status = 'ACTIVE'
+                                    AND tm.player_id != ? AND tm.pokemon_name = e.pokemon_name""",
+                                 (enc_id, player_id)
+                             ) as cursor:
+                                 result = await cursor.fetchone()
+                                 if result:
+                                     linked_member_ids.append(result[0])
+
+                         # Link this team member to all linked partners
+                         for linked_id in linked_member_ids:
+                             await db.execute(
+                                 "UPDATE team_members SET linked_member_id = ? WHERE member_id = ?",
+                                 (linked_id, member_id)
+                             )
+
+             await db.commit()
+
+         return member_id
 
 
 async def faints_pokemon(member_id: int):
-    """Mark a Pokemon as fainted."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute(
-            "UPDATE team_members SET status = 'FAINTED' WHERE member_id = ?",
-            (member_id,)
-        )
-        await db.commit()
-
-        # If linked, faint the partner too
-        async with db.execute(
-            "SELECT linked_member_id FROM team_members WHERE member_id = ?",
-            (member_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            if row and row[0]:
-                await db.execute(
-                    "UPDATE team_members SET status = 'FAINTED' WHERE member_id = ?",
-                    (row[0],)
-                )
-                await db.commit()
+     """Mark a Pokemon as fainted."""
+     # Use the all_linked version to handle 2-4 player modes
+     await faint_all_linked_pokemon(member_id)
 
 
 async def box_pokemon(member_id: int):
-    """Mark a Pokemon as boxed."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute(
-            "UPDATE team_members SET status = 'BOXED' WHERE member_id = ?",
-            (member_id,)
-        )
-        await db.commit()
-
-        # If linked, box the partner too
-        async with db.execute(
-            "SELECT linked_member_id FROM team_members WHERE member_id = ?",
-            (member_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            if row and row[0]:
-                await db.execute(
-                    "UPDATE team_members SET status = 'BOXED' WHERE member_id = ?",
-                    (row[0],)
-                )
-                await db.commit()
+     """Mark a Pokemon as boxed."""
+     # Use the all_linked version to handle 2-4 player modes
+     await box_all_linked_pokemon(member_id)
 
 
 async def unbox_pokemon(member_id: int):
-    """Unbox a Pokemon (return to ACTIVE)."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute(
-            "UPDATE team_members SET status = 'ACTIVE' WHERE member_id = ?",
-            (member_id,)
-        )
-        await db.commit()
+     """Unbox a Pokemon (return to ACTIVE)."""
+     async with aiosqlite.connect(DATABASE_PATH) as db:
+         # Get the member and their route
+         async with db.execute(
+             "SELECT member_id, route_encountered FROM team_members WHERE member_id = ?",
+             (member_id,)
+         ) as cursor:
+             row = await cursor.fetchone()
+             if not row:
+                 return
 
-        # If linked, unbox the partner too
-        async with db.execute(
-            "SELECT linked_member_id FROM team_members WHERE member_id = ?",
-            (member_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            if row and row[0]:
-                await db.execute(
-                    "UPDATE team_members SET status = 'ACTIVE' WHERE member_id = ?",
-                    (row[0],)
-                )
-                await db.commit()
+         # Unbox the member
+         await db.execute(
+             "UPDATE team_members SET status = 'ACTIVE' WHERE member_id = ?",
+             (member_id,)
+         )
+         await db.commit()
+
+         # For 2-player mode: Get linked_member_id (if any)
+         async with db.execute(
+             "SELECT linked_member_id FROM team_members WHERE member_id = ? AND linked_member_id IS NOT NULL",
+             (member_id,)
+         ) as cursor:
+             linked_row = await cursor.fetchone()
+             if linked_row and linked_row[0]:
+                 await db.execute(
+                     "UPDATE team_members SET status = 'ACTIVE' WHERE member_id = ?",
+                     (linked_row[0],)
+                 )
+                 await db.commit()
+
+         # For 3+ player mode: Get all linked encounters via soul_link_pairs
+         route_encountered = row[1]
+         if route_encountered:
+             async with db.execute(
+                 """SELECT route_id FROM routes WHERE route_number = ? 
+                    AND run_id IN (SELECT run_id FROM run_players WHERE player_id IN 
+                                   (SELECT player_id FROM team_members WHERE member_id = ?))""",
+                 (route_encountered, member_id)
+             ) as cursor:
+                 route_result = await cursor.fetchone()
+                 if route_result:
+                     route_id = route_result[0]
+
+                     # Get all encounters on this route
+                     async with db.execute(
+                         "SELECT encounter_id FROM encounters WHERE route_id = ?",
+                         (route_id,)
+                     ) as cursor:
+                         encounters = await cursor.fetchall()
+
+                     # Get all team members from these encounters
+                     for (enc_id,) in encounters:
+                         async with db.execute(
+                             """SELECT tm.member_id FROM team_members tm
+                                JOIN encounters e ON e.encounter_id = ?
+                                WHERE tm.player_id = e.player_id AND tm.status != 'ACTIVE'""",
+                             (enc_id,)
+                         ) as cursor:
+                             members = await cursor.fetchall()
+                             for (linked_member_id,) in members:
+                                 if linked_member_id != member_id:
+                                     await db.execute(
+                                         "UPDATE team_members SET status = 'ACTIVE' WHERE member_id = ?",
+                                         (linked_member_id,)
+                                     )
+                     await db.commit()
 
 
 async def release_pokemon(member_id: int):
-    """Mark a Pokemon as released."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute(
-            "UPDATE team_members SET status = 'RELEASED' WHERE member_id = ?",
-            (member_id,)
-        )
-        await db.commit()
-
-        # If linked, release the partner too
-        async with db.execute(
-            "SELECT linked_member_id FROM team_members WHERE member_id = ?",
-            (member_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            if row and row[0]:
-                await db.execute(
-                    "UPDATE team_members SET status = 'RELEASED' WHERE member_id = ?",
-                    (row[0],)
-                )
-                await db.commit()
+     """Mark a Pokemon as released."""
+     # Use the all_linked version to handle 2-4 player modes
+     await release_all_linked_pokemon(member_id)
 
 
 # RUN COMPLETION/DELETION FUNCTIONS
@@ -609,93 +627,213 @@ async def get_team_members_from_encounter(encounter_id: int):
 
 
 async def faint_all_linked_pokemon(member_id: int):
-    """Faint a Pokemon and all its Soul Link partners."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        # Get the member to faint
-        async with db.execute(
-            "SELECT * FROM team_members WHERE member_id = ?",
-            (member_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            if not row:
-                return
+     """Faint a Pokemon and all its Soul Link partners."""
+     async with aiosqlite.connect(DATABASE_PATH) as db:
+         # Get the member to faint and their route_encountered
+         async with db.execute(
+             "SELECT member_id, route_encountered FROM team_members WHERE member_id = ?",
+             (member_id,)
+         ) as cursor:
+             row = await cursor.fetchone()
+             if not row:
+                 return
 
-        # Faint the member
-        await db.execute(
-            "UPDATE team_members SET status = 'FAINTED' WHERE member_id = ?",
-            (member_id,)
-        )
-        await db.commit()
+         # Faint the member
+         await db.execute(
+             "UPDATE team_members SET status = 'FAINTED' WHERE member_id = ?",
+             (member_id,)
+         )
+         await db.commit()
 
-        # Get linked member IDs (could be multiple for 3-4 player mode)
-        async with db.execute(
-            "SELECT linked_member_id FROM team_members WHERE member_id = ? AND linked_member_id IS NOT NULL",
-            (member_id,)
-        ) as cursor:
-            linked_rows = await cursor.fetchall()
+         # For 2-player mode: Get linked_member_id (if any)
+         async with db.execute(
+             "SELECT linked_member_id FROM team_members WHERE member_id = ? AND linked_member_id IS NOT NULL",
+             (member_id,)
+         ) as cursor:
+             linked_row = await cursor.fetchone()
+             if linked_row and linked_row[0]:
+                 await db.execute(
+                     "UPDATE team_members SET status = 'FAINTED' WHERE member_id = ?",
+                     (linked_row[0],)
+                 )
+                 await db.commit()
 
-        # Faint all linked partners
-        for linked_row in linked_rows:
-            if linked_row[0]:
-                await db.execute(
-                    "UPDATE team_members SET status = 'FAINTED' WHERE member_id = ?",
-                    (linked_row[0],)
-                )
-                await db.commit()
+         # For 3+ player mode: Get all linked encounters via soul_link_pairs
+         route_encountered = row[1]
+         if route_encountered:
+             async with db.execute(
+                 """SELECT route_id FROM routes WHERE route_number = ? 
+                    AND run_id IN (SELECT run_id FROM run_players WHERE player_id IN 
+                                   (SELECT player_id FROM team_members WHERE member_id = ?))""",
+                 (route_encountered, member_id)
+             ) as cursor:
+                 route_result = await cursor.fetchone()
+                 if route_result:
+                     route_id = route_result[0]
+
+                     # Get all encounters on this route
+                     async with db.execute(
+                         "SELECT encounter_id FROM encounters WHERE route_id = ?",
+                         (route_id,)
+                     ) as cursor:
+                         encounters = await cursor.fetchall()
+
+                     # Get all team members from these encounters
+                     for (enc_id,) in encounters:
+                         async with db.execute(
+                             """SELECT tm.member_id FROM team_members tm
+                                JOIN encounters e ON e.encounter_id = ?
+                                WHERE tm.player_id = e.player_id AND tm.status != 'FAINTED'""",
+                             (enc_id,)
+                         ) as cursor:
+                             members = await cursor.fetchall()
+                             for (linked_member_id,) in members:
+                                 if linked_member_id != member_id:
+                                     await db.execute(
+                                         "UPDATE team_members SET status = 'FAINTED' WHERE member_id = ?",
+                                         (linked_member_id,)
+                                     )
+                     await db.commit()
 
 
 async def box_all_linked_pokemon(member_id: int):
-    """Box a Pokemon and all its Soul Link partners."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        # Box the member
-        await db.execute(
-            "UPDATE team_members SET status = 'BOXED' WHERE member_id = ?",
-            (member_id,)
-        )
-        await db.commit()
+     """Box a Pokemon and all its Soul Link partners."""
+     async with aiosqlite.connect(DATABASE_PATH) as db:
+         # Get the member and their route
+         async with db.execute(
+             "SELECT member_id, route_encountered FROM team_members WHERE member_id = ?",
+             (member_id,)
+         ) as cursor:
+             row = await cursor.fetchone()
+             if not row:
+                 return
 
-        # Get linked member IDs
-        async with db.execute(
-            "SELECT linked_member_id FROM team_members WHERE member_id = ? AND linked_member_id IS NOT NULL",
-            (member_id,)
-        ) as cursor:
-            linked_rows = await cursor.fetchall()
+         # Box the member
+         await db.execute(
+             "UPDATE team_members SET status = 'BOXED' WHERE member_id = ?",
+             (member_id,)
+         )
+         await db.commit()
 
-        # Box all linked partners
-        for linked_row in linked_rows:
-            if linked_row[0]:
-                await db.execute(
-                    "UPDATE team_members SET status = 'BOXED' WHERE member_id = ?",
-                    (linked_row[0],)
-                )
-                await db.commit()
+         # For 2-player mode: Get linked_member_id (if any)
+         async with db.execute(
+             "SELECT linked_member_id FROM team_members WHERE member_id = ? AND linked_member_id IS NOT NULL",
+             (member_id,)
+         ) as cursor:
+             linked_row = await cursor.fetchone()
+             if linked_row and linked_row[0]:
+                 await db.execute(
+                     "UPDATE team_members SET status = 'BOXED' WHERE member_id = ?",
+                     (linked_row[0],)
+                 )
+                 await db.commit()
+
+         # For 3+ player mode: Get all linked encounters via soul_link_pairs
+         route_encountered = row[1]
+         if route_encountered:
+             async with db.execute(
+                 """SELECT route_id FROM routes WHERE route_number = ? 
+                    AND run_id IN (SELECT run_id FROM run_players WHERE player_id IN 
+                                   (SELECT player_id FROM team_members WHERE member_id = ?))""",
+                 (route_encountered, member_id)
+             ) as cursor:
+                 route_result = await cursor.fetchone()
+                 if route_result:
+                     route_id = route_result[0]
+
+                     # Get all encounters on this route
+                     async with db.execute(
+                         "SELECT encounter_id FROM encounters WHERE route_id = ?",
+                         (route_id,)
+                     ) as cursor:
+                         encounters = await cursor.fetchall()
+
+                     # Get all team members from these encounters
+                     for (enc_id,) in encounters:
+                         async with db.execute(
+                             """SELECT tm.member_id FROM team_members tm
+                                JOIN encounters e ON e.encounter_id = ?
+                                WHERE tm.player_id = e.player_id AND tm.status != 'BOXED'""",
+                             (enc_id,)
+                         ) as cursor:
+                             members = await cursor.fetchall()
+                             for (linked_member_id,) in members:
+                                 if linked_member_id != member_id:
+                                     await db.execute(
+                                         "UPDATE team_members SET status = 'BOXED' WHERE member_id = ?",
+                                         (linked_member_id,)
+                                     )
+                     await db.commit()
 
 
 async def release_all_linked_pokemon(member_id: int):
-    """Release a Pokemon and all its Soul Link partners."""
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        # Release the member
-        await db.execute(
-            "UPDATE team_members SET status = 'RELEASED' WHERE member_id = ?",
-            (member_id,)
-        )
-        await db.commit()
+     """Release a Pokemon and all its Soul Link partners."""
+     async with aiosqlite.connect(DATABASE_PATH) as db:
+         # Get the member and their route
+         async with db.execute(
+             "SELECT member_id, route_encountered FROM team_members WHERE member_id = ?",
+             (member_id,)
+         ) as cursor:
+             row = await cursor.fetchone()
+             if not row:
+                 return
 
-        # Get linked member IDs
-        async with db.execute(
-            "SELECT linked_member_id FROM team_members WHERE member_id = ? AND linked_member_id IS NOT NULL",
-            (member_id,)
-        ) as cursor:
-            linked_rows = await cursor.fetchall()
+         # Release the member
+         await db.execute(
+             "UPDATE team_members SET status = 'RELEASED' WHERE member_id = ?",
+             (member_id,)
+         )
+         await db.commit()
 
-        # Release all linked partners
-        for linked_row in linked_rows:
-            if linked_row[0]:
-                await db.execute(
-                    "UPDATE team_members SET status = 'RELEASED' WHERE member_id = ?",
-                    (linked_row[0],)
-                )
-                await db.commit()
+         # For 2-player mode: Get linked_member_id (if any)
+         async with db.execute(
+             "SELECT linked_member_id FROM team_members WHERE member_id = ? AND linked_member_id IS NOT NULL",
+             (member_id,)
+         ) as cursor:
+             linked_row = await cursor.fetchone()
+             if linked_row and linked_row[0]:
+                 await db.execute(
+                     "UPDATE team_members SET status = 'RELEASED' WHERE member_id = ?",
+                     (linked_row[0],)
+                 )
+                 await db.commit()
+
+         # For 3+ player mode: Get all linked encounters via soul_link_pairs
+         route_encountered = row[1]
+         if route_encountered:
+             async with db.execute(
+                 """SELECT route_id FROM routes WHERE route_number = ? 
+                    AND run_id IN (SELECT run_id FROM run_players WHERE player_id IN 
+                                   (SELECT player_id FROM team_members WHERE member_id = ?))""",
+                 (route_encountered, member_id)
+             ) as cursor:
+                 route_result = await cursor.fetchone()
+                 if route_result:
+                     route_id = route_result[0]
+
+                     # Get all encounters on this route
+                     async with db.execute(
+                         "SELECT encounter_id FROM encounters WHERE route_id = ?",
+                         (route_id,)
+                     ) as cursor:
+                         encounters = await cursor.fetchall()
+
+                     # Get all team members from these encounters
+                     for (enc_id,) in encounters:
+                         async with db.execute(
+                             """SELECT tm.member_id FROM team_members tm
+                                JOIN encounters e ON e.encounter_id = ?
+                                WHERE tm.player_id = e.player_id AND tm.status != 'RELEASED'""",
+                             (enc_id,)
+                         ) as cursor:
+                             members = await cursor.fetchall()
+                             for (linked_member_id,) in members:
+                                 if linked_member_id != member_id:
+                                     await db.execute(
+                                         "UPDATE team_members SET status = 'RELEASED' WHERE member_id = ?",
+                                         (linked_member_id,)
+                                     )
+                     await db.commit()
 
 
 async def get_route_id(run_id: int, route_number: int):
