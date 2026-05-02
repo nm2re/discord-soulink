@@ -298,7 +298,9 @@ class SoulLink(commands.Cog):
                         encounters = await cursor.fetchall()
 
                 if encounters:
-                    route_groups[route['route_number']] = encounters
+                    # Normalize display key to string so legacy int values and new string values
+                    # can coexist without type comparison issues during sorting.
+                    route_groups[str(route['route_number'])] = encounters
 
             embed = create_embed(
                 f"🔗 {run[2]} - Soul Link Groups",
@@ -309,7 +311,7 @@ class SoulLink(commands.Cog):
             if not route_groups:
                 embed.add_field(name="Soul Links", value="No Soul Link groups yet", inline=False)
             else:
-                for route_num in sorted(route_groups.keys()):
+                for route_num in sorted(route_groups.keys(), key=lambda value: value.lower()):
                     encounters = route_groups[route_num]
                     pokemon_info = ""
                     for enc in encounters:
