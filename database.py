@@ -6,6 +6,9 @@ from typing import Optional, List
 async def init_db():
     """Initialize the database with all required tables."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
+        # Enable foreign key constraints (required for CASCADE DELETE to work in SQLite)
+        await db.execute("PRAGMA foreign_keys = ON")
+
         # Nuzlocke Runs table
         await db.execute("""
             CREATE TABLE IF NOT EXISTS runs (
@@ -95,6 +98,43 @@ async def init_db():
                 added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (player_id) REFERENCES run_players(player_id) ON DELETE CASCADE
             )
+        """)
+
+        await db.commit()
+
+        # Set up ID sequences with different starting values for easy differentiation
+        # This helps identify what type of ID it is at a glance
+        # Run IDs: 1, 2, 3...
+        # Player IDs: 1000, 1001, 1002... (P prefix range)
+        # Route IDs: 2000, 2001, 2002... (R prefix range)
+        # Encounter IDs: 3000, 3001, 3002... (E prefix range)
+        # Team Member IDs: 4000, 4001, 4002... (T prefix range)
+        # Soul Link Pair IDs: 5000, 5001, 5002... (S prefix range)
+
+        # Initialize sequences if they don't exist
+        await db.execute("""
+            INSERT OR IGNORE INTO sqlite_sequence (name, seq) 
+            VALUES ('runs', 0)
+        """)
+        await db.execute("""
+            INSERT OR IGNORE INTO sqlite_sequence (name, seq) 
+            VALUES ('run_players', 999)
+        """)
+        await db.execute("""
+            INSERT OR IGNORE INTO sqlite_sequence (name, seq) 
+            VALUES ('routes', 1999)
+        """)
+        await db.execute("""
+            INSERT OR IGNORE INTO sqlite_sequence (name, seq) 
+            VALUES ('encounters', 2999)
+        """)
+        await db.execute("""
+            INSERT OR IGNORE INTO sqlite_sequence (name, seq) 
+            VALUES ('team_members', 3999)
+        """)
+        await db.execute("""
+            INSERT OR IGNORE INTO sqlite_sequence (name, seq) 
+            VALUES ('soul_link_pairs', 4999)
         """)
 
         await db.commit()
@@ -453,12 +493,87 @@ async def end_run(run_id: int):
 async def delete_run(run_id: int):
     """Permanently delete a run and all related data (hard delete)."""
     async with aiosqlite.connect(DATABASE_PATH) as db:
-        # The CASCADE constraint handles deleting all related records
+        # Enable foreign key enforcement
+        await db.execute("PRAGMA foreign_keys = ON")
+
+        # Get all route IDs for this run first
+        async with db.execute(
+            "SELECT route_id FROM routes WHERE run_id = ?",
+            (run_id,)
+        ) as cursor:
+            routes = await cursor.fetchall()
+            route_ids = [r[0] for r in routes]
+
+        # Delete soul link pairs for all encounters in these routes
+        for route_id in route_ids:
+            await db.execute(
+                """DELETE FROM soul_link_pairs 
+                   WHERE encounter_id_1 IN (SELECT encounter_id FROM encounters WHERE route_id = ?)
+                   OR encounter_id_2 IN (SELECT encounter_id FROM encounters WHERE route_id = ?)""",
+                (route_id, route_id)
+            )
+
+        # Delete all encounters for these routes
+        for route_id in route_ids:
+            await db.execute(
+                "DELETE FROM encounters WHERE route_id = ?",
+                (route_id,)
+            )
+
+        # Delete all routes for this run
+        await db.execute(
+            "DELETE FROM routes WHERE run_id = ?",
+            (run_id,)
+        )
+
+        # Get all player IDs for this run
+        async with db.execute(
+            "SELECT player_id FROM run_players WHERE run_id = ?",
+            (run_id,)
+        ) as cursor:
+            players = await cursor.fetchall()
+            player_ids = [p[0] for p in players]
+
+        # Delete all team members for these players
+        for player_id in player_ids:
+            await db.execute(
+                "DELETE FROM team_members WHERE player_id = ?",
+                (player_id,)
+            )
+
+        # Delete all players for this run
+        await db.execute(
+            "DELETE FROM run_players WHERE run_id = ?",
+            (run_id,)
+        )
+
+        # Finally, delete the run itself
         await db.execute(
             "DELETE FROM runs WHERE run_id = ?",
             (run_id,)
         )
+
         await db.commit()
+
+        # Check if there are any runs left in the database
+        async with db.execute(
+            "SELECT COUNT(*) FROM runs"
+        ) as cursor:
+            run_count = (await cursor.fetchone())[0]
+
+        # If no runs left, reset all auto-increment sequences to their starting values
+        if run_count == 0:
+            # Reset sequences to their starting values:
+            # run_id: 0, player_id: 999, route_id: 1999, encounter_id: 2999,
+            # team_members: 3999, soul_link_pairs: 4999
+            await db.execute("UPDATE sqlite_sequence SET seq = 0 WHERE name = 'runs'")
+            await db.execute("UPDATE sqlite_sequence SET seq = 999 WHERE name = 'run_players'")
+            await db.execute("UPDATE sqlite_sequence SET seq = 1999 WHERE name = 'routes'")
+            await db.execute("UPDATE sqlite_sequence SET seq = 2999 WHERE name = 'encounters'")
+            await db.execute("UPDATE sqlite_sequence SET seq = 3999 WHERE name = 'team_members'")
+            await db.execute("UPDATE sqlite_sequence SET seq = 4999 WHERE name = 'soul_link_pairs'")
+
+            await db.commit()
 
 
 # SOUL LINK/LINKING FUNCTIONS
