@@ -397,7 +397,11 @@ async def add_team_member(player_id: int, pokemon_name: str, pokemon_type: str =
                                  """SELECT tm.member_id FROM team_members tm
                                     JOIN encounters e ON e.encounter_id = ?
                                     WHERE tm.player_id = e.player_id AND tm.status = 'ACTIVE'
-                                    AND tm.player_id != ? AND tm.pokemon_name = e.pokemon_name""",
+                                    AND tm.player_id != ? AND tm.pokemon_name = e.pokemon_name
+                                    AND tm.route_encountered IS NOT NULL
+                                    AND LOWER(tm.route_encountered) = LOWER(
+                                        (SELECT route_number FROM routes WHERE route_id = e.route_id)
+                                    )""",
                                  (enc_id, player_id)
                              ) as cursor:
                                  result = await cursor.fetchone()
@@ -485,7 +489,12 @@ async def unbox_pokemon(member_id: int):
                          async with db.execute(
                              """SELECT tm.member_id FROM team_members tm
                                 JOIN encounters e ON e.encounter_id = ?
-                                WHERE tm.player_id = e.player_id AND tm.status != 'ACTIVE'""",
+                                WHERE tm.player_id = e.player_id AND tm.status != 'ACTIVE'
+                                AND tm.pokemon_name = e.pokemon_name
+                                AND tm.route_encountered IS NOT NULL
+                                AND LOWER(tm.route_encountered) = LOWER(
+                                    (SELECT route_number FROM routes WHERE route_id = e.route_id)
+                                )""",
                              (enc_id,)
                          ) as cursor:
                              members = await cursor.fetchall()
@@ -691,7 +700,12 @@ async def faint_all_linked_pokemon(member_id: int):
                          async with db.execute(
                              """SELECT tm.member_id FROM team_members tm
                                 JOIN encounters e ON e.encounter_id = ?
-                                WHERE tm.player_id = e.player_id AND tm.status != 'FAINTED'""",
+                                WHERE tm.player_id = e.player_id AND tm.status != 'FAINTED'
+                                AND tm.pokemon_name = e.pokemon_name
+                                AND tm.route_encountered IS NOT NULL
+                                AND LOWER(tm.route_encountered) = LOWER(
+                                    (SELECT route_number FROM routes WHERE route_id = e.route_id)
+                                )""",
                              (enc_id,)
                          ) as cursor:
                              members = await cursor.fetchall()
@@ -761,7 +775,12 @@ async def box_all_linked_pokemon(member_id: int):
                          async with db.execute(
                              """SELECT tm.member_id FROM team_members tm
                                 JOIN encounters e ON e.encounter_id = ?
-                                WHERE tm.player_id = e.player_id AND tm.status != 'BOXED'""",
+                                WHERE tm.player_id = e.player_id AND tm.status != 'BOXED'
+                                AND tm.pokemon_name = e.pokemon_name
+                                AND tm.route_encountered IS NOT NULL
+                                AND LOWER(tm.route_encountered) = LOWER(
+                                    (SELECT route_number FROM routes WHERE route_id = e.route_id)
+                                )""",
                              (enc_id,)
                          ) as cursor:
                              members = await cursor.fetchall()
@@ -831,7 +850,12 @@ async def release_all_linked_pokemon(member_id: int):
                          async with db.execute(
                              """SELECT tm.member_id FROM team_members tm
                                 JOIN encounters e ON e.encounter_id = ?
-                                WHERE tm.player_id = e.player_id AND tm.status != 'RELEASED'""",
+                                WHERE tm.player_id = e.player_id AND tm.status != 'RELEASED'
+                                AND tm.pokemon_name = e.pokemon_name
+                                AND tm.route_encountered IS NOT NULL
+                                AND LOWER(tm.route_encountered) = LOWER(
+                                    (SELECT route_number FROM routes WHERE route_id = e.route_id)
+                                )""",
                              (enc_id,)
                          ) as cursor:
                              members = await cursor.fetchall()
