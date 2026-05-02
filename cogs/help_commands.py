@@ -8,8 +8,81 @@ class HelpCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-        self.commands_list = {
-            "Run Management": {
+        # Main commands for quick help
+        self.main_commands = {
+            "/create_run": {
+                "description": "Create a new Nuzlocke run",
+                "usage": '/create_run run_name:"Name" game_name:"Game" num_players:2 clauses:"type_restriction,shiny"',
+                "parameters": [
+                    ("run_name", "Name for the run (required)"),
+                    ("game_name", "Pokemon game being played (required)"),
+                    ("num_players", "Number of players 1-4 (required)"),
+                    ("clauses", "Comma-separated clauses: duplicate, shiny, gift, species, type_restriction (optional)")
+                ]
+            },
+            "/join_run": {
+                "description": "Join an existing Nuzlocke run",
+                "usage": "/join_run run_id:1",
+                "parameters": [
+                    ("run_id", "The ID of the run to join (required)")
+                ]
+            },
+            "/record_encounter": {
+                "description": "Record a Pokemon encounter and automatically add it to the team and link it with other encounters on the same route",
+                "usage": '/record_encounter run_id:1 route_number:1 player_id:1 pokemon_name:"Pidgeot" pokemon_type:"Flying" level:5',
+                "parameters": [
+                    ("run_id", "The run ID (required)"),
+                    ("route_number", "Route number (auto-creates route if not exists) (required)"),
+                    ("player_id", "Player ID making the encounter (required)"),
+                    ("pokemon_name", "Name/species of the Pokemon (required)"),
+                    ("pokemon_type", "Primary type of the Pokemon (optional)"),
+                    ("level", "Pokemon level, default 1 (optional)")
+                ],
+                "note": "✅ This command automatically: creates the route, records the encounter, adds Pokemon to team, and links it with other encounters on the same route! If 2+ players have encounters on the route, they are instantly soul linked."
+            },
+            "/faint_pokemon": {
+                "description": "Mark a Pokemon as fainted (dead)",
+                "usage": "/faint_pokemon member_id:1",
+                "parameters": [
+                    ("member_id", "Member ID of the Pokemon (required)")
+                ],
+                "note": "⚠️ If Soul Linked, the partner Pokemon also faints!"
+            },
+            "/box_pokemon": {
+                "description": "Box a Pokemon (temporarily remove from team)",
+                "usage": "/box_pokemon member_id:1",
+                "parameters": [
+                    ("member_id", "Member ID of the Pokemon (required)")
+                ],
+                "note": "⚠️ If Soul Linked, the partner Pokemon is also boxed!"
+            },
+            "/unbox_pokemon": {
+                "description": "Unbox a Pokemon (return to active team)",
+                "usage": "/unbox_pokemon member_id:1",
+                "parameters": [
+                    ("member_id", "Member ID of the Pokemon (required)")
+                ],
+                "note": "⚠️ If Soul Linked, the partner Pokemon is also unboxed!"
+            },
+            "/view_team": {
+                "description": "View a player's complete Pokemon team (active, boxed, fainted, released)",
+                "usage": "/view_team player_id:1",
+                "parameters": [
+                    ("player_id", "Player ID to view (required)")
+                ]
+            },
+            "/run_status": {
+                "description": "Get detailed status of a specific run",
+                "usage": "/run_status run_id:1",
+                "parameters": [
+                    ("run_id", "The ID of the run to check (required)")
+                ]
+            },
+        }
+
+        # Full commands list organized by category
+        self.full_commands = {
+            "📚 Run Management": {
                 "/create_run": {
                     "description": "Create a new Nuzlocke run",
                     "usage": '/create_run run_name:"Name" game_name:"Game" num_players:2 clauses:"type_restriction,shiny"',
@@ -57,17 +130,8 @@ class HelpCommands(commands.Cog):
                     "note": "⚠️ PERMANENT! This deletes all associated data (players, routes, Pokemon, etc.). First run without confirm:yes to see the confirmation prompt."
                 }
             },
-            "Route Management": {
-                # "/add_route": {
-                #     "description": "Add a route to a run (optional - routes are auto-created by record_encounter)",
-                #     "usage": '/add_route run_id:1 route_number:1 route_name:"Route 1"',
-                #     "parameters": [
-                #         ("run_id", "The run to add the route to (required)"),
-                #         ("route_number", "Route number like 1, 2, 3, etc. (required)"),
-                #         ("route_name", "Optional name for the route (optional)")
-                #     ],
-                #     "note": "ℹ️ Routes are automatically created when you use /record_encounter, so this is optional"
-                # },
+
+            "📚 Route Management": {
                 "/list_routes": {
                     "description": "List all routes in a run",
                     "usage": "/list_routes run_id:1",
@@ -104,7 +168,8 @@ class HelpCommands(commands.Cog):
                     ]
                 }
             },
-            "Team Management": {
+
+            "📚 Team Management": {
                 "/add_pokemon": {
                     "description": "Manually add a Pokemon to a player's team (rarely needed - use /record_encounter instead)",
                     "usage": '/add_pokemon player_id:1 pokemon_name:"Charizard" pokemon_type:"Fire" level:25 is_starter:true',
@@ -157,7 +222,8 @@ class HelpCommands(commands.Cog):
                     "note": "⚠️ If Soul Linked, the partner Pokemon is also released!"
                 }
             },
-            "Soul Link": {
+
+            "📚 Soul Link": {
                 "/link_pokemon": {
                     "description": "Manually link Pokemon encounters on a route as Soul Link partners",
                     "usage": "/link_pokemon run_id:1 route_number:1",
@@ -190,12 +256,8 @@ class HelpCommands(commands.Cog):
                     ]
                 }
             },
-            "Info": {
-                "/about": {
-                    "description": "Show bot information and features",
-                    "usage": "/about",
-                    "parameters": []
-                },
+
+            "📚 Logging & Info": {
                 "/run_log": {
                     "description": "View the activity log for a run",
                     "usage": "/run_log run_id:1 limit:15",
@@ -216,48 +278,114 @@ class HelpCommands(commands.Cog):
             }
         }
 
-    @app_commands.command(name="help", description="Show all available commands")
+    @app_commands.command(name="help", description="Show main Soul Link commands")
     @app_commands.describe(
         command="Optional: Get detailed help for a specific command"
     )
     async def help_command(self, interaction: discord.Interaction, command: str = ""):
-        """Show help information for all commands or a specific command."""
+        """Show help for main Soul Link commands."""
+
+        if command:
+            # Show help for specific command
+            command_name = command if command.startswith("/") else f"/{command}"
+
+            if command_name in self.main_commands:
+                cmd_info = self.main_commands[command_name]
+                embed = discord.Embed(
+                    title=f"📖 Help for {command_name}",
+                    description=cmd_info.get("description", ""),
+                    color=discord.Color.blue()
+                )
+
+                embed.add_field(name="Usage", value=f"`{cmd_info.get('usage', 'N/A')}`", inline=False)
+
+                if cmd_info.get("parameters"):
+                    params_text = ""
+                    for param_name, param_desc in cmd_info["parameters"]:
+                        params_text += f"**{param_name}**: {param_desc}\n"
+                    embed.add_field(name="Parameters", value=params_text, inline=False)
+
+                if cmd_info.get("note"):
+                    embed.add_field(name="Note", value=cmd_info["note"], inline=False)
+
+                await interaction.response.send_message(embed=embed)
+            else:
+                embed = discord.Embed(
+                    title="❌ Command Not Found",
+                    description=f"Command `{command_name}` not found in main commands. Try `/help_full {command_name}` for complete command list.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            # Show main commands
+            await interaction.response.defer()
+
+            embed = discord.Embed(
+                title="🌟 Main Soul Link Commands",
+                description="Essential commands to get started with Soul Link challenges",
+                color=discord.Color.purple()
+            )
+
+            commands_text = ""
+            for cmd_name, cmd_info in self.main_commands.items():
+                commands_text += f"**{cmd_name}** - {cmd_info.get('description', 'N/A')}\n"
+
+            embed.add_field(name="Available Commands", value=commands_text, inline=False)
+
+            embed.add_field(
+                name="💡 Getting More Help",
+                value="Use `/help <command_name>` to get detailed information about a specific command.\n\nExample: `/help create_run` or `/help /create_run`\n\nFor ALL commands, use `/help_full`",
+                inline=False
+            )
+
+            await interaction.followup.send(embed=embed)
+
+    @app_commands.command(name="help_full", description="Show ALL available commands with full details")
+    @app_commands.describe(
+        command="Optional: Get detailed help for a specific command"
+    )
+    async def help_full_command(self, interaction: discord.Interaction, command: str = ""):
+        """Show help for all commands organized by category."""
 
         if command:
             # Show help for specific command
             command_name = command if command.startswith("/") else f"/{command}"
             found = False
+            found_category = None
 
-            for category, cmds in self.commands_list.items():
-                if command_name in cmds:
+            # Search for command in all categories
+            for category, cmds in self.full_commands.items():
+                if isinstance(cmds, dict) and command_name in cmds:
                     cmd_info = cmds[command_name]
-
-                    embed = discord.Embed(
-                        title=f"📖 Help for {command_name}",
-                        description=cmd_info.get("description", ""),
-                        color=discord.Color.blue()
-                    )
-
-                    embed.add_field(name="Category", value=category, inline=False)
-                    embed.add_field(name="Usage", value=f"`{cmd_info.get('usage', 'N/A')}`", inline=False)
-
-                    if cmd_info.get("parameters"):
-                        params_text = ""
-                        for param_name, param_desc in cmd_info["parameters"]:
-                            params_text += f"**{param_name}**: {param_desc}\n"
-                        embed.add_field(name="Parameters", value=params_text, inline=False)
-
-                    if cmd_info.get("note"):
-                        embed.add_field(name="Note", value=cmd_info["note"], inline=False)
-
-                    await interaction.response.send_message(embed=embed)
+                    found_category = category
                     found = True
                     break
 
-            if not found:
+            if found and found_category:
+                cmd_info = self.full_commands[found_category][command_name]
+                embed = discord.Embed(
+                    title=f"📖 Help for {command_name}",
+                    description=cmd_info.get("description", ""),
+                    color=discord.Color.blue()
+                )
+
+                embed.add_field(name="Category", value=found_category, inline=False)
+                embed.add_field(name="Usage", value=f"`{cmd_info.get('usage', 'N/A')}`", inline=False)
+
+                if cmd_info.get("parameters"):
+                    params_text = ""
+                    for param_name, param_desc in cmd_info["parameters"]:
+                        params_text += f"**{param_name}**: {param_desc}\n"
+                    embed.add_field(name="Parameters", value=params_text, inline=False)
+
+                if cmd_info.get("note"):
+                    embed.add_field(name="Note", value=cmd_info["note"], inline=False)
+
+                await interaction.response.send_message(embed=embed)
+            else:
                 embed = discord.Embed(
                     title="❌ Command Not Found",
-                    description=f"Command `{command_name}` not found. Use `/help` to see all commands.",
+                    description=f"Command `{command_name}` not found. Use `/help_full` to see all commands.",
                     color=discord.Color.red()
                 )
                 await interaction.response.send_message(embed=embed, ephemeral=True)
@@ -267,20 +395,21 @@ class HelpCommands(commands.Cog):
 
             embed = discord.Embed(
                 title="📚 Complete Command Reference",
-                description="All available commands for the Nuzlocke Soul Link Bot",
+                description="All available commands for the Nuzlocke Soul Link Bot, organized by category",
                 color=discord.Color.purple()
             )
 
-            for category, cmds in self.commands_list.items():
-                commands_text = ""
-                for cmd_name, cmd_info in cmds.items():
-                    commands_text += f"**{cmd_name}** - {cmd_info.get('description', 'N/A')}\n"
+            for category, cmds in self.full_commands.items():
+                if isinstance(cmds, dict):
+                    commands_text = ""
+                    for cmd_name, cmd_info in cmds.items():
+                        commands_text += f"**{cmd_name}** - {cmd_info.get('description', 'N/A')}\n"
 
-                embed.add_field(name=category, value=commands_text, inline=False)
+                    embed.add_field(name=category, value=commands_text, inline=False)
 
             embed.add_field(
                 name="💡 Getting More Help",
-                value="Use `/help <command_name>` to get detailed information about a specific command.\n\nExample: `/help create_run` or `/help /create_run`",
+                value="Use `/help_full <command_name>` to get detailed information about a specific command.\n\nExample: `/help_full soul_link_status`\n\nFor quick reference of main commands, use `/help`",
                 inline=False
             )
 
