@@ -234,6 +234,30 @@ async def get_player_team(player_id: int):
             return await cursor.fetchall()
 
 
+async def count_player_team_members_with_status(player_id: int, status: str) -> int:
+    """Count team members on a player's roster with the given status (e.g. FAINTED)."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            "SELECT COUNT(*) FROM team_members WHERE player_id = ? AND status = ?",
+            (player_id, status),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return int(row[0]) if row else 0
+
+
+async def count_run_team_members_with_status(run_id: int, status: str) -> int:
+    """Count team members in a run with the given status (all players)."""
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        async with db.execute(
+            """SELECT COUNT(*) FROM team_members tm
+               JOIN run_players rp ON tm.player_id = rp.player_id
+               WHERE rp.run_id = ? AND tm.status = ?""",
+            (run_id, status),
+        ) as cursor:
+            row = await cursor.fetchone()
+            return int(row[0]) if row else 0
+
+
 # CREATE/INSERT FUNCTIONS
 
 async def create_run(guild_id: int, channel_id: int, run_name: str, game_name: str,

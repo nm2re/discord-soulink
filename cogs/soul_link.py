@@ -421,26 +421,31 @@ class SoulLink(commands.Cog):
 
             # Get players and teams
             players = await db_utils.get_players_in_run(run_id)
+            total_fainted = await db_utils.count_run_team_members_with_status(run_id, "FAINTED")
 
             embed = create_embed(
                 f"💚 {run[2]} - Run Health",
-                f"Status: {run[6]}",
+                f"Status: {run[6]}\n💀 **Total Pokémon fainted (run):** {total_fainted}",
                 discord.Color.green()
             )
 
             for player in players:
                 team = await db_utils.get_player_team(player['player_id'])
-                active_count = len([m for m in team if m['status'] == 'ACTIVE'])
-                fainted_count = len([m for m in team if m['status'] == 'FAINTED'])
+                active_count = len(team)
+                my_fainted = await db_utils.count_player_team_members_with_status(
+                    player["player_id"], "FAINTED"
+                )
 
                 health_bar = ""
                 if active_count == 0:
                     health_bar = "💀 Team Wiped!"
                 else:
-                    health_bar = f"✅ {active_count} active | 💀 {fainted_count} fainted"
+                    health_bar = (
+                        f"✅ {active_count} active | 💀 {my_fainted} your Pokémon fainted"
+                    )
 
                 embed.add_field(
-                    name=f"{player['discord_name']} (Deaths: {player['deaths']})",
+                    name=f"{player['discord_name']}",
                     value=health_bar,
                     inline=False
                 )
