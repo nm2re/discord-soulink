@@ -356,9 +356,16 @@ class SoulLink(commands.Cog):
                 async with aiosqlite.connect(DATABASE_PATH) as db:
                     db.row_factory = aiosqlite.Row
                     async with db.execute(
-                        """SELECT e.encounter_id, e.pokemon_name, e.pokemon_type, rp.discord_name
+                        """SELECT e.encounter_id, e.pokemon_name, e.pokemon_type, rp.discord_name,
+                                  (SELECT tm.status FROM team_members tm
+                                   WHERE tm.player_id = e.player_id
+                                     AND tm.pokemon_name = e.pokemon_name
+                                     AND tm.route_encountered IS NOT NULL
+                                     AND LOWER(tm.route_encountered) = LOWER(r.route_number)
+                                   ORDER BY tm.member_id DESC LIMIT 1) AS team_status
                            FROM encounters e
                            JOIN run_players rp ON e.player_id = rp.player_id
+                           JOIN routes r ON e.route_id = r.route_id
                            WHERE e.route_id = ?
                            ORDER BY rp.discord_name""",
                         (route['route_id'],)
@@ -383,7 +390,19 @@ class SoulLink(commands.Cog):
                     encounters = route_groups[route_num]
                     pokemon_info = ""
                     for enc in encounters:
-                        status = "✅"
+                        st = enc["team_status"]
+                        if st == "FAINTED":
+                            status = "❌"
+                        elif st == "ACTIVE":
+                            status = "✅"
+                        elif st == "BOXED":
+                            status = "📦"
+                        elif st == "RELEASED":
+                            status = "🚀"
+                        elif st is None:
+                            status = "❔"
+                        else:
+                            status = "❔"
                         pokemon_info += f"{status} {enc['discord_name']}: **{enc['pokemon_name']}** ({enc['pokemon_type']})\n"
 
                     link_text = f"**{len(encounters)} Pokemon Linked**" if len(encounters) > 2 else f"**Pair**"
