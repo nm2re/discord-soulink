@@ -541,23 +541,22 @@ class TeamManagement(commands.Cog):
     async def unbox_pokemon(self, interaction: discord.Interaction, member_id: int):
         """Unbox a Pokemon (return to team)."""
         try:
-            # Get member info
             async with aiosqlite.connect(DATABASE_PATH) as db:
                 async with db.execute(
-                    "SELECT * FROM team_members WHERE member_id = ?",
+                    """SELECT member_id, player_id, pokemon_name, route_encountered,
+                              linked_member_id, status FROM team_members WHERE member_id = ?""",
                     (member_id,)
                 ) as cursor:
-                    member = await cursor.fetchone()
+                    m = await cursor.fetchone()
 
-                if not member:
+                if not m:
                     embed = create_embed("❌ Error", f"Pokemon with ID {member_id} not found", discord.Color.red())
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
 
-                # Verify ownership
                 async with db.execute(
                     "SELECT user_id FROM run_players WHERE player_id = ?",
-                    (member[1],)
+                    (m[1],)
                 ) as cursor:
                     player = await cursor.fetchone()
 
@@ -566,39 +565,20 @@ class TeamManagement(commands.Cog):
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
 
-            # Unbox Pokemon
-            await db_utils.unbox_pokemon(member_id)
-
-            # Get run_id for logging
-            async with aiosqlite.connect(DATABASE_PATH) as db:
-                async with db.execute(
-                    "SELECT run_id FROM run_players WHERE player_id = ?",
-                    (member[1],)
-                ) as cursor:
-                    run_result = await cursor.fetchone()
-                    run_id = run_result[0] if run_result else None
-
-            # Log unbox
-            if run_id:
-                await logging_utils.log_event(
-                    run_id,
-                    "POKEMON_UNBOXED",
-                    f"{member[2]} was unboxed",
-                    {"pokemon": member[2], "player_id": member[1]}
+            if m[5] != "BOXED":
+                embed = create_embed(
+                    "❌ Error",
+                    "This Pokemon is not boxed — only boxed Pokemon can be unboxed.",
+                    discord.Color.red(),
                 )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
 
-            embed = create_embed(
-                "📦 Pokemon Unboxed",
-                f"**{member[2]}** has been unboxed and returned to your team",
-                discord.Color.blue()
-            )
-
-            # Check for linked Pokemon (both 2-player and 3+ player modes)
-            route_encountered = member[8]  # route_encountered is at index 8
             linked_pokemon_info = ""
+            route_encountered = m[3]
+            linked_member_id = m[4]
 
             if route_encountered:
-                # Get all Pokemon on the same route from other players
                 async with aiosqlite.connect(DATABASE_PATH) as db:
                     db.row_factory = aiosqlite.Row
                     async with db.execute(
@@ -607,31 +587,54 @@ class TeamManagement(commands.Cog):
                            JOIN routes r ON e.route_id = r.route_id
                            WHERE LOWER(r.route_number) = LOWER(?) AND r.run_id = (SELECT run_id FROM run_players WHERE player_id = ?)
                            AND tm.player_id != ? AND tm.status = 'BOXED'""",
-                        (route_encountered, member[1], member[1])
+                        (route_encountered, m[1], m[1]),
                     ) as cursor:
                         linked_members = await cursor.fetchall()
 
-                # Unbox all linked Pokemon
-                for linked_mon in linked_members:
-                    await db_utils.unbox_pokemon(linked_mon['member_id'])
-                    linked_pokemon_info += f"• **{linked_mon['pokemon_name']}**\n"
+                    for linked_mon in linked_members:
+                        linked_pokemon_info += f"• **{linked_mon['pokemon_name']}**\n"
 
-            # Also check for old 2-player style linked_member_id (for backward compatibility)
-            if member[10]:  # linked_member_id is at index 10
+            if linked_member_id:
                 async with aiosqlite.connect(DATABASE_PATH) as db:
                     async with db.execute(
-                        "SELECT pokemon_name FROM team_members WHERE member_id = ?",
-                        (member[10],)
+                        "SELECT pokemon_name, status FROM team_members WHERE member_id = ?",
+                        (linked_member_id,),
                     ) as cursor:
-                        linked_result = await cursor.fetchone()
-                        if linked_result and f"• **{linked_result[0]}**\n" not in linked_pokemon_info:
-                            linked_pokemon_info += f"• **{linked_result[0]}**\n"
+                        linked_row = await cursor.fetchone()
+                    if linked_row and linked_row[1] == "BOXED":
+                        line = f"• **{linked_row[0]}**\n"
+                        if line not in linked_pokemon_info:
+                            linked_pokemon_info += line
+
+            await db_utils.unbox_pokemon(member_id)
+
+            async with aiosqlite.connect(DATABASE_PATH) as db:
+                async with db.execute(
+                    "SELECT run_id FROM run_players WHERE player_id = ?",
+                    (m[1],),
+                ) as cursor:
+                    run_result = await cursor.fetchone()
+                    run_id = run_result[0] if run_result else None
+
+            if run_id:
+                await logging_utils.log_event(
+                    run_id,
+                    "POKEMON_UNBOXED",
+                    f"{m[2]} was unboxed",
+                    {"pokemon": m[2], "player_id": m[1]},
+                )
+
+            embed = create_embed(
+                "📦 Pokemon Unboxed",
+                f"**{m[2]}** has been unboxed and returned to your team",
+                discord.Color.blue(),
+            )
 
             if linked_pokemon_info:
                 embed.add_field(
                     name="⚠️ Soul Link",
                     value=f"Linked Pokemon also unboxed:\n{linked_pokemon_info.strip()}",
-                    inline=False
+                    inline=False,
                 )
 
             await interaction.response.send_message(embed=embed)

@@ -514,88 +514,8 @@ async def box_pokemon(member_id: int):
 
 
 async def unbox_pokemon(member_id: int):
-     """Unbox a Pokemon (return to ACTIVE)."""
-     async with aiosqlite.connect(DATABASE_PATH) as db:
-         # Get the member and their route
-         async with db.execute(
-             "SELECT member_id, route_encountered FROM team_members WHERE member_id = ?",
-             (member_id,)
-         ) as cursor:
-             row = await cursor.fetchone()
-             if not row:
-                 return
-
-         # Unbox the member
-         await db.execute(
-             "UPDATE team_members SET status = 'ACTIVE' WHERE member_id = ?",
-             (member_id,)
-         )
-         await db.commit()
-
-         # For 2-player mode: Get linked_member_id (if any)
-         async with db.execute(
-             "SELECT linked_member_id FROM team_members WHERE member_id = ? AND linked_member_id IS NOT NULL",
-             (member_id,)
-         ) as cursor:
-             linked_row = await cursor.fetchone()
-             if linked_row and linked_row[0]:
-                 await db.execute(
-                     "UPDATE team_members SET status = 'ACTIVE' WHERE member_id = ?",
-                     (linked_row[0],)
-                 )
-                 await db.commit()
-
-         # Manual team-member links mode: unbox all manually linked members
-         linked_member_ids = await get_linked_team_member_ids(member_id)
-         for linked_member_id in linked_member_ids:
-             if linked_member_id != member_id:
-                 await db.execute(
-                     "UPDATE team_members SET status = 'ACTIVE' WHERE member_id = ?",
-                     (linked_member_id,)
-                 )
-         await db.commit()
-
-         # For 3+ player mode: Get all linked encounters via soul_link_pairs
-         route_encountered = row[1]
-         if route_encountered:
-             async with db.execute(
-                """SELECT route_id FROM routes WHERE LOWER(route_number) = LOWER(?) 
-                    AND run_id IN (SELECT run_id FROM run_players WHERE player_id IN 
-                                   (SELECT player_id FROM team_members WHERE member_id = ?))""",
-                 (route_encountered, member_id)
-             ) as cursor:
-                 route_result = await cursor.fetchone()
-                 if route_result:
-                     route_id = route_result[0]
-
-                     # Get all encounters on this route
-                     async with db.execute(
-                         "SELECT encounter_id FROM encounters WHERE route_id = ?",
-                         (route_id,)
-                     ) as cursor:
-                         encounters = await cursor.fetchall()
-
-                     # Get all team members from these encounters
-                     for (enc_id,) in encounters:
-                         async with db.execute(
-                             """SELECT tm.member_id FROM team_members tm
-                                JOIN encounters e ON e.encounter_id = ?
-                                WHERE tm.player_id = e.player_id AND tm.status != 'ACTIVE'
-                                AND tm.pokemon_name = e.pokemon_name
-                                AND tm.route_encountered IS NOT NULL
-                                AND LOWER(tm.route_encountered) = LOWER(
-                                    (SELECT route_number FROM routes WHERE route_id = e.route_id)
-                                )""",
-                             (enc_id,)
-                         ) as cursor:
-                             members = await cursor.fetchall()
-                             for (linked_member_id,) in members:
-                                 if linked_member_id != member_id:
-                                     await db.execute(
-                                         "UPDATE team_members SET status = 'ACTIVE' WHERE member_id = ?",
-                                         (linked_member_id,)
-                                     )
-                     await db.commit()
+     """Unbox a Pokemon (return to ACTIVE) and all Soul Link partners."""
+     await unbox_all_linked_pokemon(member_id)
 
 
 async def release_pokemon(member_id: int):
@@ -900,6 +820,85 @@ async def box_all_linked_pokemon(member_id: int):
                                      await db.execute(
                                          "UPDATE team_members SET status = 'BOXED' WHERE member_id = ?",
                                          (linked_member_id,)
+                                     )
+                     await db.commit()
+
+
+async def unbox_all_linked_pokemon(member_id: int):
+     """Unbox a Pokemon and all Soul Link partners that are boxed."""
+     async with aiosqlite.connect(DATABASE_PATH) as db:
+         async with db.execute(
+             "SELECT member_id, route_encountered, status FROM team_members WHERE member_id = ?",
+             (member_id,)
+         ) as cursor:
+             row = await cursor.fetchone()
+             if not row or row[2] != "BOXED":
+                 return
+
+         route_encountered = row[1]
+
+         await db.execute(
+             "UPDATE team_members SET status = 'ACTIVE' WHERE member_id = ?",
+             (member_id,)
+         )
+         await db.commit()
+
+         async with db.execute(
+             "SELECT linked_member_id FROM team_members WHERE member_id = ? AND linked_member_id IS NOT NULL",
+             (member_id,)
+         ) as cursor:
+             linked_row = await cursor.fetchone()
+             if linked_row and linked_row[0]:
+                 await db.execute(
+                     "UPDATE team_members SET status = 'ACTIVE' WHERE member_id = ? AND status = 'BOXED'",
+                     (linked_row[0],)
+                 )
+                 await db.commit()
+
+         linked_member_ids = await get_linked_team_member_ids(member_id)
+         for linked_mid in linked_member_ids:
+             if linked_mid != member_id:
+                 await db.execute(
+                     "UPDATE team_members SET status = 'ACTIVE' WHERE member_id = ? AND status = 'BOXED'",
+                     (linked_mid,)
+                 )
+         await db.commit()
+
+         if route_encountered:
+             async with db.execute(
+                """SELECT route_id FROM routes WHERE LOWER(route_number) = LOWER(?)
+                    AND run_id IN (SELECT run_id FROM run_players WHERE player_id IN
+                                   (SELECT player_id FROM team_members WHERE member_id = ?))""",
+                 (route_encountered, member_id)
+             ) as cursor:
+                 route_result = await cursor.fetchone()
+                 if route_result:
+                     route_id = route_result[0]
+
+                     async with db.execute(
+                         "SELECT encounter_id FROM encounters WHERE route_id = ?",
+                         (route_id,)
+                     ) as cursor:
+                         encounters = await cursor.fetchall()
+
+                     for (enc_id,) in encounters:
+                         async with db.execute(
+                             """SELECT tm.member_id FROM team_members tm
+                                JOIN encounters e ON e.encounter_id = ?
+                                WHERE tm.player_id = e.player_id AND tm.status = 'BOXED'
+                                AND tm.pokemon_name = e.pokemon_name
+                                AND tm.route_encountered IS NOT NULL
+                                AND LOWER(tm.route_encountered) = LOWER(
+                                    (SELECT route_number FROM routes WHERE route_id = e.route_id)
+                                )""",
+                             (enc_id,)
+                         ) as cursor:
+                             members = await cursor.fetchall()
+                             for (linked_mid,) in members:
+                                 if linked_mid != member_id:
+                                     await db.execute(
+                                         "UPDATE team_members SET status = 'ACTIVE' WHERE member_id = ?",
+                                         (linked_mid,)
                                      )
                      await db.commit()
 
