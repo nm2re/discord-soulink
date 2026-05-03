@@ -361,7 +361,8 @@ class TeamManagement(commands.Cog):
                     return
 
             # Get all linked Pokemon before boxing (to track them for the response)
-            linked_pokemon_info = ""
+            linked_pokemon_lines = []
+            seen_linked_member_ids = set()
             route_encountered = member[8]  # route_encountered is at index 8
 
             if route_encountered:
@@ -379,18 +380,27 @@ class TeamManagement(commands.Cog):
                         linked_members = await cursor.fetchall()
 
                     for linked_mon in linked_members:
-                        linked_pokemon_info += f"• **{linked_mon['pokemon_name']}**\n"
+                        mid = linked_mon["member_id"]
+                        if mid in seen_linked_member_ids:
+                            continue
+                        seen_linked_member_ids.add(mid)
+                        linked_pokemon_lines.append(f"• **{linked_mon['pokemon_name']}**\n")
 
             # Also check for old 2-player style linked_member_id (for backward compatibility)
             if member[10]:  # linked_member_id is at index 10
                 async with aiosqlite.connect(DATABASE_PATH) as db:
                     async with db.execute(
-                        "SELECT pokemon_name FROM team_members WHERE member_id = ?",
+                        "SELECT member_id, pokemon_name FROM team_members WHERE member_id = ?",
                         (member[10],)
                     ) as cursor:
                         linked_result = await cursor.fetchone()
-                        if linked_result and f"• **{linked_result[0]}**\n" not in linked_pokemon_info:
-                            linked_pokemon_info += f"• **{linked_result[0]}**\n"
+                    if linked_result:
+                        lm_id, lm_name = linked_result[0], linked_result[1]
+                        if lm_id not in seen_linked_member_ids and lm_name:
+                            seen_linked_member_ids.add(lm_id)
+                            linked_pokemon_lines.append(f"• **{lm_name}**\n")
+
+            linked_pokemon_info = "".join(linked_pokemon_lines)
 
             # Box Pokemon (and all linked ones)
             await db_utils.box_pokemon(member_id)
